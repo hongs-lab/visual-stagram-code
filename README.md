@@ -42,9 +42,9 @@ VS Code처럼 보이는 인스타그램 DM 앱. 대화가 파이썬 코드처럼
 
 ## 설치
 
-- macOS : `Visual Stagram Code-…-arm64.dmg` 를 열어 Applications로 끌어다 놓습니다 (Apple Silicon 맥).
+- macOS : `Visual-Stagram-Code-mac-arm64.dmg` 를 열어 Applications로 끌어다 놓습니다 (Apple Silicon 맥).
   처음 열 때 막히면 시스템 설정 > 개인정보 보호 및 보안 > "그래도 열기"
-- Windows : `Visual Stagram Code Setup ….exe` 를 실행합니다.
+- Windows : `Visual-Stagram-Code-Setup.exe` 를 실행합니다.
   "Windows의 PC 보호" 창이 뜨면 추가 정보 > 실행
 
 ## 개발

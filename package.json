@@ -44,6 +44,12 @@
           ]
         }
       ]
+    },
+    "dmg": {
+      "artifactName": "Visual-Stagram-Code-mac-${arch}.${ext}"
+    },
+    "nsis": {
+      "artifactName": "Visual-Stagram-Code-Setup.${ext}"
     }
   },
   "//": "dist builds in $TMPDIR: under ~/Documents, iCloud's file-provider xattrs on the .app make codesign fail"
