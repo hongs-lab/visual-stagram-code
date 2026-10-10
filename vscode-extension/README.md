@@ -4,7 +4,7 @@
 
 ## 필요한 것
 
-Visual Stagram Code 데스크톱 앱이 설치되어 있고, 그 앱에서 인스타그램에 한 번 로그인되어 있어야 합니다.
+[Visual Stagram Code 데스크톱 앱](https://hongs-lab.github.io/visual-stagram-code/)이 설치되어 있고, 그 앱에서 인스타그램에 한 번 로그인되어 있어야 합니다.
 확장은 그 앱을 창 없이 뒤에서 실행해 대화를 가져옵니다. 로그인과 비밀번호는 앱 안의 instagram.com 페이지에서만 다룹니다.
 
 ## 쓰는 법

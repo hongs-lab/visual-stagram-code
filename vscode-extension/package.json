@@ -2,7 +2,7 @@
   "name": "visual-stagram-code",
   "displayName": "Visual Stagram Code",
   "description": "인스타그램 DM을 파이썬 코드처럼 보여줍니다. Visual Stagram Code 데스크톱 앱이 필요합니다.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "hongs-lab",
   "license": "UNLICENSED",
   "repository": {
@@ -15,6 +15,14 @@
   },
   "categories": [
     "Other"
+  ],
+  "keywords": [
+    "instagram",
+    "dm",
+    "인스타그램"
+  ],
+  "extensionKind": [
+    "ui"
   ],
   "main": "./extension.js",
   "activationEvents": [
@@ -36,7 +44,7 @@
     "viewsWelcome": [
       {
         "view": "visualStagram.threads",
-        "contents": "Visual Stagram Code 앱에 연결하지 못했습니다. 앱을 설치하거나 실행해 주세요.\n[다시 연결](command:visualStagram.retry)",
+        "contents": "Visual Stagram Code 앱에 연결하지 못했습니다. 앱을 설치하거나 실행해 주세요.\n[앱 내려받기](https://hongs-lab.github.io/visual-stagram-code/)\n[다시 연결](command:visualStagram.retry)",
         "when": "visualStagram.status == offline"
       },
       {
