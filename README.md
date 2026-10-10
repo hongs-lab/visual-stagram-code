@@ -43,7 +43,8 @@ VS Code처럼 보이는 인스타그램 DM 앱. 대화가 파이썬 코드처럼
 
 이 앱을 설치하고 한 번 로그인해 두면, 진짜 VS Code 안에서도 DM을 볼 수 있습니다.
 
-- `visual-stagram-code.vsix` 를 받아 VS Code의 확장 보기 > `...` > "VSIX에서 설치" 로 설치합니다
+- VS Code의 확장 보기에서 `Visual Stagram Code` 를 검색해 설치합니다
+- 검색에 나오지 않는 에디터(Cursor 등)는 `visual-stagram-code.vsix` 를 받아 확장 보기 > `...` > "VSIX에서 설치" 로 설치합니다
 - 탐색기 아래 `DIRECT` 목록에서 `이름.py` 를 누르면 대화가 열립니다
 - 대화 파일에서 Enter를 누르면 입력창이 뜨고, 쓰고 Enter를 누르면 전송됩니다
 - 확장은 이 앱을 창 없이 뒤에서 실행해 씁니다. 따로 켜 둘 필요는 없습니다
