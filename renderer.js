@@ -4,8 +4,6 @@ const editor = document.querySelector('.editor')
 const code = document.querySelector('.code')
 const draft = document.getElementById('draft')
 
-const COMPOSER = '[role="textbox"][contenteditable="true"]'
-
 document.body.classList.toggle('win', navigator.userAgentData.platform !== 'macOS') // see .win in index.html
 
 let active = null // name of the thread opened from the explorer
@@ -15,6 +13,7 @@ let away = true // webview is not on the DM pages (logged out, challenge, still 
 let readme = '' // README.md: the page shown whenever no chat is open
 let wasDoc = false
 let last = '' // last rendered state, to skip no-op renders
+let level = Number(localStorage.getItem('camouflage') ?? 2) // how much filler code surrounds the messages
 
 const span = (className, textContent) =>
   Object.assign(document.createElement('span'), { className, textContent })
@@ -24,25 +23,42 @@ const line = (...tokens) => {
   el.append(...tokens)
   return el
 }
-const str = (s) => span('str', `"${s.replace(/[\\"]/g, '\\$&').replace(/\n/g, '\\n')}"`)
-const CALL = { recv: 'print', send: 'input' } // their messages print, ours are input
+
+// Python colouring for the filler code: comments, strings, numbers, keywords, calls.
+const TOKEN =
+  /(#.*$)|((?:\b[fFrRbB])?(["'])(?:\\.|(?!\3).)*\3)|\b(\d+(?:\.\d+)?)\b|\b(import|from|return|if|elif|else|for|while|with|as|try|except|finally|raise|yield|pass|break|continue|await|async)\b|\b(def|class|lambda|None|True|False|and|or|not|in|is|self)\b|(@\w+)|\b([A-Za-z_]\w*)(?=\()/g
+const highlight = (text) => {
+  const out = []
+  let at = 0
+  for (const m of text.matchAll(TOKEN)) {
+    out.push(text.slice(at, m.index), span(m[1] ? 'com' : m[2] ? 'str' : m[4] ? 'num' : m[5] ? 'kw' : m[6] ? 'decl' : 'fn', m[0]))
+    at = m.index + m[0].length
+  }
+  out.push(text.slice(at))
+  return out
+}
 
 // A picture argument: open("file.jpg"), with the image itself in a hover card.
 const picture = (src) => {
   const el = span('media', '')
   const img = Object.assign(new Image(), { loading: 'lazy', src }) // lazy: fetched on first hover
-  el.append(span('fn', 'open'), '(', span('str', `"${new URL(src).pathname.split('/').pop()}"`), ')', img)
+  el.append(span('fn', 'open'), '(', span('str', camo.quote(camo.file(src))), ')', img)
   return el
 }
-const call = ({ side, text, media, src }) => {
-  const args = [text != null && str(text), src && picture(src)].filter(Boolean)
-  return line(
-    span('fn', CALL[side]),
-    '(',
+// One line of the generated file (see camo.js). Messages get a gutter bar: blue = theirs, green = ours.
+const codeLine = (l) => {
+  if (l.kind === 'code') return line(...highlight(l.text))
+  if (l.kind === 'note') return line(l.indent, span('com', '# ' + l.text))
+  const args = [l.text != null && span('str', camo.quote(l.text)), l.src && picture(l.src)].filter(Boolean)
+  const el = line(
+    l.indent,
+    ...highlight(l.pre),
     ...args.flatMap((arg, i) => (i ? [', ', arg] : [arg])),
-    ')',
-    ...(media && !src ? [span('com', '  # media')] : []),
+    ...highlight(l.post),
+    ...(l.media && !l.src ? [span('com', '  # media')] : []),
   )
+  el.classList.add(l.kind)
+  return el
 }
 
 // README.md as markdown source: headings and `inline code` get a colour.
@@ -63,7 +79,7 @@ function render(snap, path) {
   // Logged out shows the manual rather than a bare login page; a dialog on the DM pages needs the real page.
   const raw = pinned || (!away && !snap.ok)
   const doc = !raw && (manual || !snap.canSend) // README.md is the page whenever no chat is open
-  const state = JSON.stringify([snap, raw, active, path, doc, readme.length])
+  const state = JSON.stringify([snap, raw, active, path, doc, readme.length, level])
   if (state === last) return
   last = state
 
@@ -92,7 +108,7 @@ function render(snap, path) {
       file.addEventListener('click', () => {
         active = name
         manual = false
-        view.executeJavaScript(`window.__vscThreads[${i}].click()`)
+        view.executeJavaScript(GUEST.open(i))
         code.scrollTop = code.scrollHeight // land on the newest message
         draft.focus()
       })
@@ -109,7 +125,7 @@ function render(snap, path) {
           ...(snap.rows.length
             ? []
             : [line(span('com', '# nothing read from this chat yet (the preview icon, top right, shows the real page)'))]),
-          ...snap.rows.map((row) => (row.side === 'note' ? line(span('com', '# ' + (row.text ?? 'media'))) : call(row))),
+          ...camo(snap.rows, level).map(codeLine),
           ...(snap.pending ? [line(span('com', `# ${snap.pending} attachment(s) ready, Enter sends`))] : []),
         ]),
   )
@@ -134,7 +150,7 @@ async function poll() {
   let snap = { ok: false, threads: [], rows: [], pending: 0, canSend: false }
   if (path?.startsWith('/direct')) {
     try {
-      snap = await view.executeJavaScript(`(${scrape})()`)
+      snap = await view.executeJavaScript(GUEST.scrape)
     } catch {
       return // mid-navigation: keep what's on screen
     }
@@ -149,14 +165,11 @@ fetch('README.md')
     poll()
   })
 
-const inGuest = (js, gesture) => view.executeJavaScript(`(() => { const box = document.querySelector('${COMPOSER}'); ${js} })()`, gesture)
-const focusComposer = () => inGuest('box?.focus(); return !!box')
-
 // Enter on the last line types the draft into Instagram's own composer and sends it
 // (with an empty draft it just sends whatever attachment is waiting there).
 draft.addEventListener('keydown', async (e) => {
   if (e.key !== 'Enter' || e.isComposing) return
-  if (!(await focusComposer())) return // keep the draft rather than lose it
+  if (!(await view.executeJavaScript(GUEST.focus))) return // keep the draft rather than lose it
   const text = draft.value
   draft.value = ''
   if (text) await view.insertText(text)
@@ -166,8 +179,6 @@ draft.addEventListener('keydown', async (e) => {
 
 // Attach: paste (Cmd+V) or drop files on the editor, or Cmd+O for Instagram's own file picker.
 // Pasted/dropped files are handed to Instagram's upload input, as if picked there.
-const UPLOAD = `let el = box; while (el && !el.querySelector('input[type="file"]')) el = el.parentElement
-  const upload = el?.querySelector('input[type="file"]'); if (!upload) return false`
 const dataUrl = (file) =>
   new Promise((resolve) => {
     const reader = new FileReader()
@@ -178,13 +189,7 @@ async function attach(files) {
   const payload = await Promise.all(
     files.map(async (f) => ({ name: f.name || 'image.png', type: f.type, data: (await dataUrl(f)).split(',')[1] })),
   )
-  // ponytail: whole file goes over as base64; fine for photos, stream it if large videos matter
-  inGuest(`${UPLOAD}
-    const dt = new DataTransfer()
-    for (const f of ${JSON.stringify(payload)})
-      dt.items.add(new File([Uint8Array.from(atob(f.data), (c) => c.charCodeAt(0))], f.name, { type: f.type }))
-    upload.files = dt.files
-    upload.dispatchEvent(new Event('change', { bubbles: true }))`)
+  view.executeJavaScript(GUEST.attach(payload))
 }
 draft.addEventListener('paste', (e) => {
   if (!e.clipboardData.files.length) return // plain text pastes into the draft as usual
@@ -199,7 +204,7 @@ code.addEventListener('drop', (e) => {
 addEventListener('keydown', (e) => {
   if (!(e.metaKey || e.ctrlKey) || e.key !== 'o') return
   e.preventDefault()
-  inGuest(`${UPLOAD}; upload.click()`, true)
+  view.executeJavaScript(GUEST.pick, true)
 })
 code.addEventListener('click', () => getSelection().toString() || draft.focus())
 
@@ -212,7 +217,7 @@ code.addEventListener(
     const atEnd = up ? code.scrollTop === 0 : code.scrollHeight - code.scrollTop - code.clientHeight < 2
     if (!atEnd || Date.now() - paged < 400) return
     paged = Date.now()
-    view.executeJavaScript(`window.__vscScroller?.scrollBy(0, ${up ? -1 : 1} * innerHeight)`)
+    view.executeJavaScript(GUEST.page(up ? -1 : 1))
   },
   { passive: true },
 )
@@ -229,6 +234,15 @@ document.getElementById('raw').addEventListener('click', () => {
 })
 document.getElementById('readme').addEventListener('click', () => {
   manual = true
+  poll()
+})
+// The status bar's "Spaces" number is the camouflage level: more spaces, more filler code.
+const spaces = document.getElementById('spaces')
+spaces.textContent = 'Spaces: ' + level
+spaces.addEventListener('click', () => {
+  level = camo.LEVELS[(camo.LEVELS.indexOf(level) + 1) % camo.LEVELS.length]
+  localStorage.setItem('camouflage', level)
+  spaces.textContent = 'Spaces: ' + level
   poll()
 })
 document.getElementById('back').addEventListener('click', () => view.goBack())

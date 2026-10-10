@@ -97,3 +97,31 @@ function scrape() {
     canSend: !!composer,
   }
 }
+
+// Page-side actions as source text. Shared by the app window (renderer.js) and the VS Code
+// bridge (bridge.js), so this file stays the only place that describes Instagram's DOM.
+const GUEST = (() => {
+  const COMPOSER = '[role="textbox"][contenteditable="true"]'
+  const UPLOAD = `(() => { let el = document.querySelector('${COMPOSER}'); while (el && !el.querySelector('input[type="file"]')) el = el.parentElement; return el?.querySelector('input[type="file"]') })()`
+  return {
+    scrape: `(${scrape})()`,
+    focus: `(() => { const box = document.querySelector('${COMPOSER}'); box?.focus(); return !!box })()`,
+    pick: `${UPLOAD}?.click()`, // Instagram's own file picker
+    open: (index) => `window.__vscThreads[${Number(index)}]?.click()`,
+    page: (dir) => `window.__vscScroller?.scrollBy(0, ${dir < 0 ? -1 : 1} * innerHeight)`,
+    // files: [{ name, type, data (base64) }], handed to Instagram's upload input as if picked there
+    // ponytail: whole file goes over as base64; fine for photos, stream it if large videos matter
+    attach: (files) => `(() => {
+      const upload = ${UPLOAD}
+      if (!upload) return false
+      const dt = new DataTransfer()
+      for (const f of ${JSON.stringify(files)})
+        dt.items.add(new File([Uint8Array.from(atob(f.data), (c) => c.charCodeAt(0))], f.name, { type: f.type }))
+      upload.files = dt.files
+      upload.dispatchEvent(new Event('change', { bubbles: true }))
+      return true
+    })()`,
+  }
+})()
+
+if (typeof module !== 'undefined') module.exports = GUEST

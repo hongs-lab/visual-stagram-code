@@ -1,0 +1,114 @@
+{
+  "name": "visual-stagram-code",
+  "displayName": "Visual Stagram Code",
+  "description": "인스타그램 DM을 파이썬 코드처럼 보여줍니다. Visual Stagram Code 데스크톱 앱이 필요합니다.",
+  "version": "0.1.0",
+  "publisher": "hongs-lab",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hongs-lab/visual-stagram-code"
+  },
+  "icon": "icon.png",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onView:visualStagram.threads"
+  ],
+  "scripts": {
+    "sync": "node -e \"const fs=require('fs');fs.copyFileSync('../camo.js','camo.js');fs.copyFileSync('../vsagram.png','icon.png')\"",
+    "package": "npm run sync && npx --yes @vscode/vsce package --no-dependencies --skip-license --out ../dist/visual-stagram-code.vsix"
+  },
+  "contributes": {
+    "views": {
+      "explorer": [
+        {
+          "id": "visualStagram.threads",
+          "name": "direct"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "visualStagram.threads",
+        "contents": "Visual Stagram Code 앱에 연결하지 못했습니다. 앱을 설치하거나 실행해 주세요.\n[다시 연결](command:visualStagram.retry)",
+        "when": "visualStagram.status == offline"
+      },
+      {
+        "view": "visualStagram.threads",
+        "contents": "인스타그램 로그인이 필요합니다.\n[로그인 창 열기](command:visualStagram.showApp)",
+        "when": "visualStagram.status == away"
+      }
+    ],
+    "commands": [
+      {
+        "command": "visualStagram.send",
+        "title": "Visual Stagram: 메시지 보내기"
+      },
+      {
+        "command": "visualStagram.attach",
+        "title": "Visual Stagram: 파일 첨부"
+      },
+      {
+        "command": "visualStagram.older",
+        "title": "Visual Stagram: 이전 메시지 불러오기"
+      },
+      {
+        "command": "visualStagram.camouflage",
+        "title": "Visual Stagram: 위장 코드 양 바꾸기"
+      },
+      {
+        "command": "visualStagram.showApp",
+        "title": "Visual Stagram: 앱 창 열기 (로그인)"
+      },
+      {
+        "command": "visualStagram.retry",
+        "title": "Visual Stagram: 앱에 다시 연결"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "visualStagram.send",
+        "key": "enter",
+        "when": "editorTextFocus && resourceScheme == vstagram"
+      },
+      {
+        "command": "visualStagram.attach",
+        "key": "ctrl+o",
+        "mac": "cmd+o",
+        "when": "editorTextFocus && resourceScheme == vstagram"
+      },
+      {
+        "command": "visualStagram.older",
+        "key": "alt+up",
+        "when": "editorTextFocus && resourceScheme == vstagram"
+      }
+    ],
+    "configuration": {
+      "title": "Visual Stagram Code",
+      "properties": {
+        "visualStagram.camouflage": {
+          "type": "number",
+          "enum": [
+            0,
+            2,
+            4,
+            8
+          ],
+          "default": 2,
+          "description": "메시지 주변에 섞는 위장 코드의 양. 0이면 print/input 줄만 보입니다."
+        },
+        "visualStagram.appPath": {
+          "type": "string",
+          "default": "",
+          "description": "Visual Stagram Code 앱의 위치. 비워 두면 기본 설치 위치에서 찾습니다."
+        }
+      }
+    }
+  }
+}

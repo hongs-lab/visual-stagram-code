@@ -208,6 +208,12 @@ webview { position: absolute; top: 0; left: 0; width: 1400px; height: 2400px; }
 }
 .media:hover img { display: block; }
 .h { color: #569cd6; font-weight: bold; }
+/* messages among the filler, marked like git's changed-line bars: blue = received, green = mine */
+.line.recv { background: linear-gradient(#0078d4, #0078d4) 50px 0 / 3px 100% no-repeat; }
+.line.send { background: linear-gradient(#2ea043, #2ea043) 50px 0 / 3px 100% no-repeat; }
+.kw { color: #c586c0; }
+.decl { color: #569cd6; }
+.num { color: #b5cea8; }
 .fn { color: #dcdcaa; }
 .str { color: #ce9178; }
 .com { color: #6a9955; }
@@ -217,7 +223,8 @@ webview { position: absolute; top: 0; left: 0; width: 1400px; height: 2400px; }
 
 .statusbar { display: flex; justify-content: space-between; border-top: 1px solid var(--border); font-size: 12px; white-space: nowrap; }
 .statusbar > div { display: flex; }
-.statusbar span { display: flex; align-items: center; gap: 4px; margin: 0 2px; padding: 0 5px; }
+.statusbar span, .statusbar button { display: flex; align-items: center; gap: 4px; margin: 0 2px; padding: 0 5px; }
+.statusbar button:hover { background: #ffffff1f; }
 .statusbar .remote { margin: 0 4px 0 0; padding: 0 10px; background: var(--accent); color: #fff; }
 .statusbar .codicon { font-size: 14px; }
 </style>
@@ -276,10 +283,10 @@ webview { position: absolute; top: 0; left: 0; width: 1400px; height: 2400px; }
     </div>
     <div class="breadcrumbs"></div>
     <div class="stage">
-      <webview src="https://www.instagram.com/direct/inbox/" partition="persist:instagram"></webview>
+      <webview src="https://www.instagram.com/direct/inbox/" partition="persist:instagram" webpreferences="backgroundThrottling=no"></webview>
       <div class="code">
         <div id="lines"></div>
-        <div class="line input" hidden><span class="fn">input</span>(<span class="str">"<input id="draft" aria-label="Message" spellcheck="false" autocomplete="off">"</span>)</div>
+        <div class="line input send" hidden><span class="fn">input</span>(<span class="str">"<input id="draft" aria-label="Message" spellcheck="false" autocomplete="off">"</span>)</div>
       </div>
     </div>
   </section>
@@ -294,7 +301,7 @@ webview { position: absolute; top: 0; left: 0; width: 1400px; height: 2400px; }
   </div>
   <div>
     <span>Ln 1, Col 1</span>
-    <span>Spaces: 4</span>
+    <button id="spaces" title="Camouflage">Spaces: 2</button>
     <span>UTF-8</span>
     <span>LF</span>
     <span id="lang">{} Python</span>
@@ -304,6 +311,7 @@ webview { position: absolute; top: 0; left: 0; width: 1400px; height: 2400px; }
 </footer>
 
 <script src="scrape.js"></script>
+<script src="camo.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

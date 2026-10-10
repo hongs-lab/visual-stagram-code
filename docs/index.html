@@ -65,6 +65,7 @@ h1 span { background: var(--brand); -webkit-background-clip: text; background-cl
 .btn.primary { background: var(--fg); border-color: var(--fg); color: #0b0b10; }
 .btn svg { width: 18px; height: 18px; fill: currentColor; }
 .note { margin: 14px 0 0; color: var(--dim); font-size: 13px; }
+.note a { color: var(--fg); }
 
 /* The screenshot is a page capture, so the macOS window buttons are drawn back on top of it. */
 .shot { position: relative; margin: 0 auto 96px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: 0 40px 120px -30px rgba(138, 58, 200, 0.45); }
@@ -76,12 +77,12 @@ h1 span { background: var(--brand); -webkit-background-clip: text; background-cl
 
 h2 { margin: 0 0 8px; font-size: clamp(26px, 4vw, 36px); letter-spacing: -0.02em; text-align: center; }
 .sub { margin: 0 0 40px; color: var(--dim); text-align: center; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; margin-bottom: 96px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 96px; }
 .card { padding: 24px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); }
 .card h3 { margin: 0 0 8px; font-size: 17px; }
 .card p { margin: 0; color: var(--dim); font-size: 15px; }
 .card pre { margin: 0 0 16px; font: 13px/1.7 var(--mono); color: #d4d4d4; overflow-x: auto; }
-.fn { color: #dcdcaa; } .str { color: #ce9178; } .com { color: #6a9955; }
+.fn { color: #dcdcaa; } .str { color: #ce9178; } .com { color: #6a9955; } .kw { color: #569cd6; }
 
 .install { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 96px; }
 .install ol { margin: 12px 0 0; padding-left: 20px; color: var(--dim); font-size: 15px; }
@@ -115,7 +116,8 @@ footer p { margin: 4px 0; }
       Windows용 다운로드
     </a>
   </div>
-  <p class="note">macOS는 Apple Silicon(M1 이후), Windows는 64비트용입니다.</p>
+  <p class="note">macOS는 Apple Silicon(M1 이후), Windows는 64비트용입니다.<br>
+    쓰던 VS Code 안에서 쓰려면 앱을 설치한 뒤 <a href="https://github.com/hongs-lab/visual-stagram-code/releases/latest/download/visual-stagram-code.vsix">VS Code 확장(.vsix)</a>을 추가하세요.</p>
 </header>
 
 <div class="shot">
@@ -134,11 +136,17 @@ footer p { margin: 4px 0; }
       <p>받은 메시지는 <code>print()</code>, 내가 보낸 메시지는 <code>input()</code>으로 보입니다. 마지막 줄에 쓰고 Enter를 누르면 전송됩니다.</p>
     </div>
     <div class="card">
+      <pre><span class="kw">def</span> <span class="fn">on_message</span>(event):
+    <span class="fn">print</span>(<span class="str">"이따 저녁 먹자"</span>)</pre>
+      <h3>진짜 코드 사이에 숨김</h3>
+      <p>메시지 주변에 함수와 반복문이 무작위로 섞여 진짜 작업 중인 파일처럼 보입니다. 내 메시지와 답장은 줄 옆의 색 막대로 구분됩니다.</p>
+    </div>
+    <div class="card">
       <pre>direct/
   민지.py
   스터디 그룹.py</pre>
       <h3>대화방은 .py 파일</h3>
-      <p>탐색기의 파일 하나가 대화방 하나입니다. 파일을 누르면 대화가 열리고, 위로 스크롤하면 이전 메시지를 불러옵니다.</p>
+      <p>탐색기의 파일 하나가 대화방 하나입니다. 쓰던 VS Code에 확장으로 넣으면 일하던 창 그대로 DM을 볼 수 있습니다.</p>
     </div>
     <div class="card">
       <pre><span class="fn">print</span>(<span class="fn">open</span>(<span class="str">"photo.jpg"</span>))
