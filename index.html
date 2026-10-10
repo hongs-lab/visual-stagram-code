@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:">
+<title>Visual Stagram Code</title>
+<link rel="stylesheet" href="node_modules/@vscode/codicons/dist/codicon.css">
+<style>
+/* VS Code "Dark Modern" */
+:root {
+  --bg: #1f1f1f;
+  --chrome: #181818;
+  --border: #2b2b2b;
+  --fg: #cccccc;
+  --accent: #0078d4;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  display: grid;
+  grid-template-rows: 35px 1fr 22px;
+  background: var(--chrome);
+  color: var(--fg);
+  font: 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  user-select: none;
+  cursor: default;
+  overflow: hidden;
+}
+button { all: unset; }
+button:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+
+.titlebar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+}
+.titlebar button, .command-center { -webkit-app-region: no-drag; }
+.icon { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 5px; }
+button.icon:hover { background: #ffffff1a; }
+.command-center {
+  width: 38vw;
+  max-width: 600px;
+  height: 22px;
+  margin-left: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: #ffffff0d;
+  border: 1px solid #ffffff1a;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.command-center .codicon { font-size: 14px; }
+/* keeps clear of the Windows/Linux window buttons; on macOS the env() fallbacks make this 8px */
+.layout-controls {
+  position: absolute;
+  right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 8px);
+  display: flex;
+  gap: 2px;
+}
+/* Windows/Linux (body.win): VS Code keeps its menu in the title bar and uses Consolas 14px */
+.menubar { display: none; flex: none; align-items: center; }
+.menubar img { margin: 0 6px 0 2px; }
+.menubar span { padding: 4px 8px; }
+.win .menubar { display: flex; }
+/* menu on the left, search box centred in what's left, room reserved for the buttons on the right */
+.win .titlebar {
+  justify-content: flex-start;
+  padding: 0 calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 110px) 0 8px;
+}
+.win #back { margin-left: auto; }
+.win .command-center { flex: 0 1 38vw; width: auto; min-width: 0; margin-right: auto; overflow: hidden; white-space: nowrap; }
+.win .code { font: 14px/19px Consolas, 'Courier New', monospace; }
+.win .line { min-height: 19px; }
+
+main { display: flex; min-height: 0; }
+
+.activitybar {
+  width: 48px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border-right: 1px solid var(--border);
+}
+.activitybar > div > * {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  color: #868686;
+}
+.activitybar > div > :hover, .activitybar .active { color: #d7d7d7; }
+.activitybar .active::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: var(--accent);
+}
+.activitybar .codicon { font-size: 24px; }
+
+.sidebar {
+  width: 300px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+}
+.sidebar[hidden] { display: none; }
+.sidebar h2 {
+  height: 35px;
+  margin: 0;
+  padding: 0 8px 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 400;
+}
+.pane-header {
+  height: 22px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 2px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.pane-header.collapsed { border-top: 1px solid var(--border); }
+.tree { flex: 1; min-height: 0; overflow-y: auto; }
+.tree .folder, .tree button { height: 22px; display: flex; align-items: center; gap: 6px; }
+.tree .folder { padding-left: 8px; gap: 2px; }
+.tree button { box-sizing: border-box; width: 100%; padding: 0 8px 0 32px; }
+.tree button:hover { background: #2a2d2e; }
+.tree button.active { background: #37373d; color: #fff; }
+.tree #readme { padding-left: 24px; }
+.tree button :last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.codicon-python, .codicon-markdown { flex: none; color: #519aba; }
+
+.editor { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg); }
+.tabs { height: 35px; flex: none; display: flex; background: var(--chrome); border-bottom: 1px solid var(--border); }
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: -1px;
+  padding: 0 10px;
+  background: var(--bg);
+  border-top: 1px solid var(--accent);
+  border-right: 1px solid var(--border);
+  color: #fff;
+}
+.tab-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; padding-right: 8px; }
+.breadcrumbs { height: 22px; flex: none; display: flex; align-items: center; gap: 2px; padding-left: 16px; color: #a9a9a9; }
+
+.stage { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+/* Hidden under the code view. A fixed, tall desktop-size viewport keeps Instagram
+   on its full layout and makes it render more threads and messages to read. */
+webview { position: absolute; top: 0; left: 0; width: 1400px; height: 2400px; }
+.raw webview { width: 100%; height: 100%; z-index: 2; }
+.code {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: auto;
+  background: var(--bg);
+  font: 12px/18px Menlo, Monaco, 'Courier New', monospace;
+  user-select: text;
+  cursor: text;
+  counter-reset: ln;
+}
+.line { min-height: 18px; padding-right: 24px; white-space: pre; counter-increment: ln; }
+.line::before {
+  content: counter(ln);
+  display: inline-block;
+  width: 38px;
+  margin-right: 26px;
+  text-align: right;
+  color: #6e7681;
+  user-select: none;
+}
+.line.input { box-shadow: inset 0 0 0 1px #282828; }
+.line.input::before { color: var(--fg); }
+#draft { all: unset; field-sizing: content; min-width: 1px; caret-color: #aeafad; }
+/* Hover card for pictures: anchored to the hovered call, flips below when there's no room above. */
+.media:hover { anchor-name: --media; }
+.media img {
+  display: none;
+  position: fixed;
+  position-anchor: --media;
+  position-area: top span-right;
+  position-try-fallbacks: flip-block;
+  z-index: 3;
+  max-width: 320px;
+  max-height: 320px;
+  padding: 4px;
+  background: #202020;
+  border: 1px solid #454545;
+  border-radius: 3px;
+}
+.media:hover img { display: block; }
+.h { color: #569cd6; font-weight: bold; }
+.fn { color: #dcdcaa; }
+.str { color: #ce9178; }
+.com { color: #6a9955; }
+::-webkit-scrollbar { width: 14px; height: 14px; }
+::-webkit-scrollbar-thumb { background: rgba(121, 121, 121, 0.4); }
+::-webkit-scrollbar-corner { background: transparent; }
+
+.statusbar { display: flex; justify-content: space-between; border-top: 1px solid var(--border); font-size: 12px; white-space: nowrap; }
+.statusbar > div { display: flex; }
+.statusbar span { display: flex; align-items: center; gap: 4px; margin: 0 2px; padding: 0 5px; }
+.statusbar .remote { margin: 0 4px 0 0; padding: 0 10px; background: var(--accent); color: #fff; }
+.statusbar .codicon { font-size: 14px; }
+</style>
+</head>
+<body>
+
+<header class="titlebar">
+  <div class="menubar" aria-hidden="true"><img src="vsstagram.svg" alt="" width="16" height="16"><span>File</span><span>Edit</span><span>Selection</span><span>View</span><span>Go</span><span>Run</span><span>Terminal</span><span>Help</span></div>
+  <button class="icon" id="back" title="Go Back" aria-label="Go Back"><i class="codicon codicon-arrow-left"></i></button>
+  <button class="icon" id="forward" title="Go Forward" aria-label="Go Forward"><i class="codicon codicon-arrow-right"></i></button>
+  <div class="command-center"><i class="codicon codicon-search"></i>visual-stagram-code</div>
+  <div class="layout-controls">
+    <button class="icon" data-toggle-sidebar title="Toggle Primary Side Bar" aria-label="Toggle Primary Side Bar"><i class="codicon codicon-layout-sidebar-left"></i></button>
+    <i class="icon codicon codicon-layout-panel-off" aria-hidden="true"></i>
+    <i class="icon codicon codicon-layout-sidebar-right-off" aria-hidden="true"></i>
+    <i class="icon codicon codicon-layout" aria-hidden="true"></i>
+  </div>
+</header>
+
+<main>
+  <nav class="activitybar">
+    <div>
+      <button class="active" data-toggle-sidebar title="Explorer" aria-label="Explorer"><i class="codicon codicon-files"></i></button>
+      <i class="codicon codicon-search" aria-hidden="true"></i>
+      <i class="codicon codicon-source-control" aria-hidden="true"></i>
+      <i class="codicon codicon-debug-alt" aria-hidden="true"></i>
+      <i class="codicon codicon-extensions" aria-hidden="true"></i>
+    </div>
+    <div>
+      <i class="codicon codicon-account" aria-hidden="true"></i>
+      <i class="codicon codicon-settings-gear" aria-hidden="true"></i>
+    </div>
+  </nav>
+
+  <aside class="sidebar">
+    <h2>EXPLORER <i class="codicon codicon-ellipsis" aria-hidden="true"></i></h2>
+    <div class="pane-header"><i class="codicon codicon-chevron-down"></i>VISUAL-STAGRAM-CODE</div>
+    <div class="tree">
+      <div class="folder"><i class="codicon codicon-chevron-down"></i>direct</div>
+      <div id="threads"></div>
+      <button id="readme"><i class="codicon codicon-markdown"></i><span>README.md</span></button>
+    </div>
+    <div class="pane-header collapsed"><i class="codicon codicon-chevron-right"></i>OUTLINE</div>
+    <div class="pane-header collapsed"><i class="codicon codicon-chevron-right"></i>TIMELINE</div>
+  </aside>
+
+  <!-- "raw" = show the real Instagram page (login, prompts, anything the code view can't do) -->
+  <section class="editor">
+    <div class="tabs">
+      <div class="tab"><i id="tab-icon" class="codicon codicon-markdown" aria-hidden="true"></i><span class="tab-label">README.md</span><i class="codicon codicon-close" aria-hidden="true"></i></div>
+      <div class="tab-actions">
+        <button class="icon" id="raw" title="Toggle Instagram Page" aria-label="Toggle Instagram Page"><i class="codicon codicon-open-preview"></i></button>
+        <i class="codicon codicon-split-horizontal" aria-hidden="true"></i>
+        <i class="codicon codicon-ellipsis" aria-hidden="true"></i>
+      </div>
+    </div>
+    <div class="breadcrumbs"></div>
+    <div class="stage">
+      <webview src="https://www.instagram.com/direct/inbox/" partition="persist:instagram"></webview>
+      <div class="code">
+        <div id="lines"></div>
+        <div class="line input" hidden><span class="fn">input</span>(<span class="str">"<input id="draft" aria-label="Message" spellcheck="false" autocomplete="off">"</span>)</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="statusbar">
+  <div>
+    <span class="remote"><i class="codicon codicon-remote"></i></span>
+    <span><i class="codicon codicon-git-branch"></i>main</span>
+    <span><i class="codicon codicon-sync"></i></span>
+    <span><i class="codicon codicon-error"></i>0 <i class="codicon codicon-warning"></i>0</span>
+  </div>
+  <div>
+    <span>Ln 1, Col 1</span>
+    <span>Spaces: 4</span>
+    <span>UTF-8</span>
+    <span>LF</span>
+    <span id="lang">{} Python</span>
+    <span>3.13.5</span>
+    <span><i class="codicon codicon-bell"></i></span>
+  </div>
+</footer>
+
+<script src="scrape.js"></script>
+<script src="renderer.js"></script>
+</body>
+</html>

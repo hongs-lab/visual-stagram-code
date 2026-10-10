@@ -1,0 +1,50 @@
+{
+  "name": "visual-stagram-code",
+  "productName": "Visual Stagram Code",
+  "version": "0.1.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node allow.js",
+    "dist": "electron-builder --mac --win -c.directories.output=\"$TMPDIR/visual-stagram-code\" && mkdir -p dist && cp \"$TMPDIR\"/visual-stagram-code/*.dmg \"$TMPDIR\"/visual-stagram-code/*.exe dist/"
+  },
+  "dependencies": {
+    "@vscode/codicons": "^0.0.46-24"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
+  },
+  "description": "Instagram DMs in an editor that looks like VS Code",
+  "author": "hongje",
+  "build": {
+    "appId": "com.visualstagramcode.app",
+    "files": [
+      "main.js",
+      "allow.js",
+      "index.html",
+      "renderer.js",
+      "scrape.js",
+      "README.md",
+      "vsstagram.svg"
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.social-networking",
+      "identity": "-",
+      "hardenedRuntime": false
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
+  },
+  "//": "dist builds in $TMPDIR: under ~/Documents, iCloud's file-provider xattrs on the .app make codesign fail"
+}
