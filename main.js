@@ -44,6 +44,13 @@ app.on('web-contents-created', (_, wc) => {
   }
   wc.on('will-navigate', guard)
   wc.on('will-redirect', guard)
+  // Right after login Instagram asks "save your login info?". The session already lives in this
+  // app's own profile, so answering is pointless: go straight on to the messages.
+  const skipSavePrompt = (_, url) => {
+    if (URL.canParse(url) && new URL(url).pathname.startsWith('/accounts/onetap')) wc.loadURL('https://www.instagram.com/direct/inbox/')
+  }
+  wc.on('did-navigate', skipSavePrompt)
+  wc.on('did-navigate-in-page', skipSavePrompt)
 })
 
 const reveal = () => {

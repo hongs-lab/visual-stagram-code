@@ -2,7 +2,7 @@
   "name": "visual-stagram-code",
   "displayName": "Visual Stagram Code",
   "description": "인스타그램 DM을 파이썬 코드처럼 보여줍니다. Visual Stagram Code 데스크톱 앱이 필요합니다.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "hongs-lab",
   "license": "UNLICENSED",
   "repository": {

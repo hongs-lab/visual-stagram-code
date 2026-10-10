@@ -190,6 +190,7 @@ webview { position: absolute; top: 0; left: 0; width: 1400px; height: 2400px; }
 .line.input { box-shadow: inset 0 0 0 1px #282828; }
 .line.input::before { color: var(--fg); }
 #draft { all: unset; field-sizing: content; min-width: 1px; caret-color: #aeafad; }
+.line.input.empty .q { display: none; } /* nothing typed yet: input(), not input("") */
 /* Hover card for pictures: anchored to the hovered call, flips below when there's no room above. */
 .media:hover { anchor-name: --media; }
 .media img {
@@ -286,7 +287,8 @@ webview { position: absolute; top: 0; left: 0; width: 1400px; height: 2400px; }
       <webview src="https://www.instagram.com/direct/inbox/" partition="persist:instagram" webpreferences="backgroundThrottling=no"></webview>
       <div class="code">
         <div id="lines"></div>
-        <div class="line input send" hidden><span class="fn">input</span>(<span class="str">"<input id="draft" aria-label="Message" spellcheck="false" autocomplete="off">"</span>)</div>
+        <div class="line input send" hidden><span id="draft-pre"></span><span class="str"><span class="q">"</span><input id="draft" aria-label="Message" spellcheck="false" autocomplete="off"><span class="q">"</span></span><span id="draft-post"></span></div>
+        <div id="after"></div>
       </div>
     </div>
   </section>

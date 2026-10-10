@@ -14,6 +14,7 @@ let readme = '' // README.md: the page shown whenever no chat is open
 let wasDoc = false
 let last = '' // last rendered state, to skip no-op renders
 let level = Number(localStorage.getItem('camouflage') ?? 2) // how much filler code surrounds the messages
+let draftSeed = '' // picks the code around the line being typed; frozen while there is text in it
 
 const span = (className, textContent) =>
   Object.assign(document.createElement('span'), { className, textContent })
@@ -72,6 +73,10 @@ const markdown = (text) =>
         : line(...l.split(/(`[^`]*`)/).map((part) => (part.startsWith('`') ? span('str', part) : part))),
     )
 
+// The typing line reads `reply = input()` until there is text, then `reply = input("...")`.
+const quotes = () => document.querySelector('.line.input').classList.toggle('empty', !draft.value)
+draft.addEventListener('input', quotes)
+
 function render(snap, path) {
   const nowAway = !path?.startsWith('/direct')
   if (away && !nowAway) pinned = false // just logged in: back to the editor
@@ -79,7 +84,8 @@ function render(snap, path) {
   // Logged out shows the manual rather than a bare login page; a dialog on the DM pages needs the real page.
   const raw = pinned || (!away && !snap.ok)
   const doc = !raw && (manual || !snap.canSend) // README.md is the page whenever no chat is open
-  const state = JSON.stringify([snap, raw, active, path, doc, readme.length, level])
+  if (!draft.value) draftSeed = `${active}:${snap.rows.length}` // a new spot in the file after every message
+  const state = JSON.stringify([snap, raw, active, path, doc, readme.length, level, draftSeed])
   if (state === last) return
   last = state
 
@@ -116,8 +122,11 @@ function render(snap, path) {
     }),
   )
 
-  // editor: the manual, or the conversation as code
+  // editor: the manual, or the conversation as code with the line being typed somewhere inside it
   const stick = code.scrollHeight - code.scrollTop - code.clientHeight < 40
+  const file = doc ? [] : camo(snap.rows, level, { seed: draftSeed })
+  const at = file.findIndex((l) => l.kind === 'draft')
+  const typing = file[at] ?? { indent: '', pre: '', post: '' }
   document.getElementById('lines').replaceChildren(
     ...(doc
       ? markdown(readme)
@@ -125,10 +134,14 @@ function render(snap, path) {
           ...(snap.rows.length
             ? []
             : [line(span('com', '# nothing read from this chat yet (the preview icon, top right, shows the real page)'))]),
-          ...camo(snap.rows, level).map(codeLine),
-          ...(snap.pending ? [line(span('com', `# ${snap.pending} attachment(s) ready, Enter sends`))] : []),
+          ...file.slice(0, at).map(codeLine),
+          ...(snap.pending ? [line(typing.indent, span('com', `# ${snap.pending} attachment(s) ready, Enter sends`))] : []),
         ]),
   )
+  quotes()
+  document.getElementById('draft-pre').replaceChildren(typing.indent, ...highlight(typing.pre))
+  document.getElementById('draft-post').replaceChildren(...highlight(typing.post))
+  document.getElementById('after').replaceChildren(...(doc ? [] : file.slice(at + 1).map(codeLine)))
   const input = document.querySelector('.line.input')
   const opened = input.hidden && !doc
   input.hidden = doc
@@ -172,6 +185,7 @@ draft.addEventListener('keydown', async (e) => {
   if (!(await view.executeJavaScript(GUEST.focus))) return // keep the draft rather than lose it
   const text = draft.value
   draft.value = ''
+  quotes()
   if (text) await view.insertText(text)
   for (const type of ['keyDown', 'char', 'keyUp']) view.sendInputEvent({ type, keyCode: 'Enter' })
   code.scrollTop = code.scrollHeight

@@ -29,6 +29,8 @@ function activate(context) {
   let active = null // name of the thread whose file is live
   let switchedAt = 0
   let lastPaged = 0
+  let draftText = '' // what is being typed in the input box, mirrored into the file
+  let draftSeed = '' // picks the code around that line; frozen while there is text in it
   const docs = new Map() // uri -> { text, lines } of the generated file
   const tops = new WeakMap() // editor -> first visible line, to notice scrolling up to the top
   const counts = new WeakMap() // editor -> line count before the last update
@@ -98,8 +100,10 @@ function activate(context) {
   function refresh() {
     // right after switching threads the engine still reports the previous conversation
     if (active == null || state.away || Date.now() - switchedAt < 1200) return
-    const lines = camo(state.rows, config().get('camouflage'))
-    if (state.pending) lines.push({ kind: 'note', indent: '', text: `${state.pending} attachment(s) ready, Enter sends` })
+    if (!draftText) draftSeed = `${active}:${state.rows.length}`
+    const lines = camo(state.rows, config().get('camouflage'), { seed: draftSeed, text: draftText })
+    const at = lines.findIndex((l) => l.kind === 'draft')
+    if (state.pending) lines.splice(at, 0, { kind: 'note', indent: lines[at].indent, text: `${state.pending} attachment(s) ready, Enter sends` })
     const text = lines.map(camo.text).join('\n') + '\n'
     const uri = uriFor(active)
     if (docs.get(uri.toString())?.text === text) return
@@ -141,7 +145,8 @@ function activate(context) {
     const doc = docs.get(editor.document.uri.toString())
     if (!doc) return
     for (const kind of ['recv', 'send']) {
-      editor.setDecorations(bars[kind], doc.lines.flatMap((l, i) => (l.kind === kind ? [new vscode.Range(i, 0, i, 0)] : [])))
+      const marked = (l) => l.kind === kind || (kind === 'send' && l.kind === 'draft')
+      editor.setDecorations(bars[kind], doc.lines.flatMap((l, i) => (marked(l) ? [new vscode.Range(i, 0, i, 0)] : [])))
     }
   }
   const editorsOf = (document) => vscode.window.visibleTextEditors.filter((e) => e.document === document)
@@ -197,12 +202,25 @@ function activate(context) {
     bottom(editor)
     setTimeout(refresh, 1300) // once the engine has switched, even if nothing else changes
   })
-  command('visualStagram.send', async () => {
-    const text = await vscode.window.showInputBox({
-      placeHolder: 'input("")',
-      prompt: state.pending ? `${state.pending} attachment(s) ready` : undefined,
+  command('visualStagram.send', () => {
+    const box = vscode.window.createInputBox()
+    box.placeholder = 'input()'
+    if (state.pending) box.prompt = `${state.pending} attachment(s) ready`
+    // the file shows the line as it is typed
+    box.onDidChangeValue((value) => {
+      draftText = value
+      refresh()
     })
-    if (text !== undefined) say({ type: 'send', text }) // empty is fine: it sends a waiting attachment
+    box.onDidAccept(() => {
+      say({ type: 'send', text: box.value }) // empty is fine: it sends a waiting attachment
+      box.hide()
+    })
+    box.onDidHide(() => {
+      draftText = ''
+      refresh()
+      box.dispose()
+    })
+    box.show()
   })
   command('visualStagram.attach', async () => {
     const picked = await vscode.window.showOpenDialog({ canSelectMany: true })
