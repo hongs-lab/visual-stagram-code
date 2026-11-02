@@ -29,17 +29,26 @@ function activate(context) {
   let active = null // name of the thread whose file is live
   let switchedAt = 0
   let lastPaged = 0
-  let draftText = '' // what is being typed in the input box, mirrored into the file
-  let draftSeed = '' // picks the code around that line; frozen while there is text in it
-  const docs = new Map() // uri -> { text, lines } of the generated file
+  let land = null // uri of the file whose cursor goes onto the input line at its next update
+  // uri -> the generated file, head + draft + tail. draft is what is typed between the input line's quotes;
+  // shown is the head/tail the editor has right now (it lags behind while an edit is on its way); ours is
+  // the document version our last edit produced.
+  const docs = new Map()
   const tops = new WeakMap() // editor -> first visible line, to notice scrolling up to the top
   const counts = new WeakMap() // editor -> line count before the last update
+  let queue = Promise.resolve() // edits and saves of the files, one at a time
   let disposed = false
 
   const treeChanged = new vscode.EventEmitter()
-  const docChanged = new vscode.EventEmitter()
   const say = (message) => socket?.write(JSON.stringify(message) + '\n')
   const status = () => vscode.commands.executeCommand('setContext', 'visualStagram.status', !socket ? 'offline' : state.away ? 'away' : 'ok')
+  const switching = () => Date.now() - switchedAt < 1200 // right after switching threads the engine still reports the previous conversation
+  const enqueue = (job) => (queue = queue.then(job).catch(() => {}))
+  const fileOf = (uri) => {
+    const key = uri.toString()
+    if (!docs.has(key)) docs.set(key, { head: '', draft: '', tail: '', lines: [], seed: '', shown: { head: '', tail: '' } })
+    return docs.get(key)
+  }
 
   // ---- the engine -------------------------------------------------------------------------
   function startApp() {
@@ -98,17 +107,64 @@ function activate(context) {
   }
 
   function refresh() {
-    // right after switching threads the engine still reports the previous conversation
-    if (active == null || state.away || Date.now() - switchedAt < 1200) return
-    if (!draftText) draftSeed = `${active}:${state.rows.length}`
-    const lines = camo(state.rows, config().get('camouflage'), { seed: draftSeed, text: draftText })
-    const at = lines.findIndex((l) => l.kind === 'draft')
-    if (state.pending) lines.splice(at, 0, { kind: 'note', indent: lines[at].indent, text: `${state.pending} attachment(s) ready, Enter sends` })
-    const text = lines.map(camo.text).join('\n') + '\n'
+    if (active == null || state.away || switching()) return
     const uri = uriFor(active)
-    if (docs.get(uri.toString())?.text === text) return
-    docs.set(uri.toString(), { text, lines })
-    docChanged.fire(uri)
+    const doc = fileOf(uri)
+    if (!doc.draft) doc.seed = `${active}:${state.rows.length}` // picks the code around the input line; frozen while there is text in it
+    const lines = camo(state.rows, config().get('camouflage'), { seed: doc.seed })
+    const input = lines.find((l) => l.kind === 'draft')
+    if (state.pending) lines.splice(lines.indexOf(input), 0, { kind: 'note', indent: input.indent, text: `${state.pending} attachment(s) ready, Enter sends` })
+    const text = lines.map(camo.text)
+    const at = lines.indexOf(input)
+    // The quotes stay even with nothing typed: adding them mid-typing would break a Korean (IME) composition.
+    doc.head = [...text.slice(0, at), `${input.indent}${input.pre}"`].join('\n')
+    doc.tail = [`"${input.post}`, ...text.slice(at + 1)].join('\n').trimEnd() + '\n' // nothing for "trim on save" settings to remove
+    doc.lines = lines
+    const document = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString())
+    if (document) enqueue(() => write(document))
+  }
+
+  // Takes in what the user changed. Text between the input line's quotes is the draft; any other change is undone
+  // by the next write, and what was typed there goes onto the input line instead (in the app a click anywhere focuses it).
+  function read(document, typed) {
+    const doc = fileOf(document.uri)
+    const { head, tail } = doc.shown
+    if (!tail) return // nothing of ours in it yet (e.g. restored after a restart): the next write replaces it all
+    const now = document.getText()
+    if (now.startsWith(head) && now.endsWith(tail) && now.length >= head.length + tail.length) {
+      doc.draft = now.slice(head.length, now.length - tail.length)
+    } else {
+      doc.draft += typed
+      land = document.uri.toString()
+    }
+  }
+
+  // Brings an open file in line with docs, editing only what differs, then saves it so the tab doesn't stay dirty.
+  async function write(document) {
+    if (document.isClosed) return
+    const doc = fileOf(document.uri)
+    const { head, draft, tail } = doc
+    const have = document.getText()
+    // an empty input line can change shape under the cursor (input("") -> input("").strip()): keep the cursor in it
+    const waiting = draft ? [] : editorsOf(document).filter((e) => e.selection.isEmpty && document.offsetAt(e.selection.active) === doc.shown.head.length)
+    if (have !== head + draft + tail) {
+      const { start, end, text } = camo.diff(have, head + draft + tail)
+      const edit = new vscode.WorkspaceEdit()
+      edit.replace(document.uri, new vscode.Range(document.positionAt(start), document.positionAt(end)), text)
+      const version = document.version
+      if (!(await vscode.workspace.applyEdit(edit))) return // the file changed meanwhile; that change queues another write
+      doc.ours = version + 1 // the change event of this edit is not the user typing
+    }
+    doc.shown = { head, tail }
+    const landing = land === document.uri.toString() && !switching()
+    if (landing) land = null
+    for (const editor of landing ? editorsOf(document) : waiting) {
+      const at = document.positionAt(head.length + draft.length)
+      editor.selection = new vscode.Selection(at, at)
+      if (landing) editor.revealRange(editor.selection)
+    }
+    clearTimeout(doc.saving)
+    doc.saving = setTimeout(() => enqueue(() => document.isDirty && document.save()), 300) // after a pause, not on every key
   }
 
   context.subscriptions.push(
@@ -123,10 +179,27 @@ function activate(context) {
         return item
       },
     }),
-    vscode.workspace.registerTextDocumentContentProvider(SCHEME, {
-      onDidChange: docChanged.event,
-      provideTextDocumentContent: (uri) => docs.get(uri.toString())?.text ?? '',
-    }),
+    // A writable file system rather than a content provider: VS Code opens those read-only.
+    vscode.workspace.registerFileSystemProvider(
+      SCHEME,
+      {
+        onDidChangeFile: new vscode.EventEmitter().event, // never fires: open files change through edits (write)
+        watch: () => new vscode.Disposable(() => {}),
+        // mtime stays 0, so a save never looks like it overwrites a newer file
+        stat: (uri) => ({ type: uri.path.endsWith('.py') ? vscode.FileType.File : vscode.FileType.Directory, ctime: 0, mtime: 0, size: 0 }),
+        readFile(uri) {
+          const doc = fileOf(uri)
+          doc.shown = { head: doc.head, tail: doc.tail }
+          return Buffer.from(doc.head + doc.draft + doc.tail || '\n') // never empty: an empty file takes the platform's line ending (CRLF on Windows)
+        },
+        writeFile() {}, // saving only clears the dirty mark: the file is generated
+        readDirectory: () => [],
+        createDirectory() {},
+        delete() {},
+        rename() {},
+      },
+      { isCaseSensitive: true },
+    ),
   )
 
   // ---- which lines are messages: bars like git's changed-line markers ------------------------------
@@ -156,8 +229,20 @@ function activate(context) {
     bars.recv,
     bars.send,
     vscode.window.onDidChangeVisibleTextEditors((editors) => editors.forEach(decorate)),
-    vscode.workspace.onDidChangeTextDocument(({ document }) => {
-      if (document.uri.scheme !== SCHEME) return
+    // a tab is a conversation: going back to one switches the engine to it, so what is typed there goes to that person
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      const index = state.threads.findIndex((name) => uriFor(name).toString() === editor?.document.uri.toString())
+      if (index !== -1 && state.threads[index] !== active) vscode.commands.executeCommand('visualStagram.open', index, state.threads[index])
+    }),
+    vscode.workspace.onDidChangeTextDocument(({ document, contentChanges, reason }) => {
+      if (document.uri.scheme !== SCHEME || !contentChanges.length) return
+      const version = document.version
+      const typed = reason ? '' : contentChanges.map((c) => c.text).join('') // undo/redo isn't typing
+      enqueue(() => {
+        if (version === fileOf(document.uri).ours) return
+        read(document, typed)
+        return write(document)
+      })
       for (const editor of editorsOf(document)) {
         decorate(editor)
         // follow new messages unless the reader has scrolled up into the history
@@ -196,32 +281,25 @@ function activate(context) {
   command('visualStagram.open', async (index, name) => {
     active = name
     switchedAt = Date.now()
+    land = uriFor(name).toString()
     say({ type: 'open', index })
     const editor = await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uriFor(name)), { preview: false })
     decorate(editor)
     bottom(editor)
     setTimeout(refresh, 1300) // once the engine has switched, even if nothing else changes
   })
-  command('visualStagram.send', () => {
-    const box = vscode.window.createInputBox()
-    box.placeholder = 'input()'
-    if (state.pending) box.prompt = `${state.pending} attachment(s) ready`
-    // the file shows the line as it is typed
-    box.onDidChangeValue((value) => {
-      draftText = value
-      refresh()
-    })
-    box.onDidAccept(() => {
-      say({ type: 'send', text: box.value }) // empty is fine: it sends a waiting attachment
-      box.hide()
-    })
-    box.onDidHide(() => {
-      draftText = ''
-      refresh()
-      box.dispose()
-    })
-    box.show()
-  })
+  // Enter: the input line goes out. Queued, so it comes after the typing that came before it.
+  command('visualStagram.send', () =>
+    enqueue(async () => {
+      const document = vscode.window.activeTextEditor?.document
+      // only to the person whose file this is; while it can't go out, the text stays on the line
+      if (document?.uri.toString() !== uriFor(active).toString() || switching() || state.away || !state.canSend) return
+      const doc = fileOf(document.uri)
+      say({ type: 'send', text: doc.draft }) // empty is fine: it sends a waiting attachment
+      doc.draft = ''
+      await write(document)
+    }),
+  )
   command('visualStagram.attach', async () => {
     const picked = await vscode.window.showOpenDialog({ canSelectMany: true })
     if (!picked?.length) return

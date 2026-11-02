@@ -1,8 +1,8 @@
 {
   "name": "vstagram",
-  "displayName": "Visual Stagram Code",
+  "displayName": "Visual Stagram Code DM",
   "description": "인스타그램 DM을 파이썬 코드처럼 보여줍니다. Visual Stagram Code 데스크톱 앱이 필요합니다.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "hongs-lab",
   "license": "UNLICENSED",
   "repository": {
@@ -26,7 +26,8 @@
   ],
   "main": "./extension.js",
   "activationEvents": [
-    "onView:visualStagram.threads"
+    "onView:visualStagram.threads",
+    "onFileSystem:vstagram"
   ],
   "scripts": {
     "sync": "node -e \"const fs=require('fs');fs.copyFileSync('../camo.js','camo.js')\"",

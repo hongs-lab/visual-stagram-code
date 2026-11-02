@@ -140,6 +140,18 @@ const camo = (() => {
     const args = [l.text != null && !empty && quote(l.text), l.src && `open(${quote(file(l.src))})`].filter(Boolean)
     return l.indent + l.pre + args.join(', ') + l.post + (l.media && !l.src ? '  # media' : '')
   }
+  // The single replacement that turns `from` into `to`: from.slice(start, end) becomes text.
+  // The unchanged ends are left alone, so a cursor or scroll position sitting there stays put.
+  camo.diff = (from, to) => {
+    let start = 0
+    while (start < from.length && from[start] === to[start]) start++
+    let end = 0
+    while (end < from.length - start && end < to.length - start && from.at(-1 - end) === to.at(-1 - end)) end++
+    const low = (c) => c >= '\uDC00' && c <= '\uDFFF' // second half of an emoji: never cut there
+    if (start && low(from[start])) start--
+    if (end && low(from.at(-end))) end--
+    return { start, end: from.length - end, text: to.slice(start, to.length - end) }
+  }
   camo.quote = quote
   camo.file = file
   camo.LEVELS = [0, ...Object.keys(LEVEL).map(Number)]
@@ -185,5 +197,12 @@ if (typeof require !== 'undefined' && require.main === module) {
   }
   const many = Array.from({ length: 60 }, (_, i) => ({ side: i % 2 ? 'recv' : 'send', text: 'message ' + i }))
   assert(camo(many, 8).length > camo(many, 4).length && camo(many, 4).length > camo(many, 2).length, 'higher level, more filler')
+  // diff: one replacement that leaves the unchanged ends alone and never splits an emoji
+  for (const [from, to] of [['a\nb\n', 'a\nx\nb\n'], ['', 'ab\n'], ['ab\n', ''], ['say 😀 hi', 'say 😂 hi'], ['😀', '😂'], ['x("hi")', 'x("")'], ['same', 'same']]) {
+    const { start, end, text } = camo.diff(from, to)
+    assert.strictEqual(from.slice(0, start) + text + from.slice(end), to, `${from} -> ${to}`)
+    assert(!/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/.test(text), 'emoji kept whole')
+  }
+  assert.deepStrictEqual(camo.diff('a\nb\n', 'a\nx\nb\n'), { start: 2, end: 2, text: 'x\n' }, 'a line added above leaves the line below untouched')
   console.log('ok')
 }
