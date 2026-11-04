@@ -31,7 +31,8 @@
       "README.md",
       "vsstagram.svg",
       "bridge.js",
-      "camo.js"
+      "camo.js",
+      "icons/**"
     ],
     "mac": {
       "target": "dmg",

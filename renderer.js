@@ -70,7 +70,7 @@ const DEFAULT_SETTINGS = `{
   "editor.tabSize": ${[0, 2, 4, 8].includes(Number(localStorage.getItem('camouflage') ?? 2)) ? Number(localStorage.getItem('camouflage') ?? 2) : 2},
   // Long lines wrap instead of running off the screen (Alt+Z)
   "editor.wordWrap": "on",
-  // Language of new conversation files: py, js, ts, java, c, cpp, go, rs, log, txt
+  // Extension of the conversation files, which picks their language: py, js, kt, swift, sql, html, md, ...
   "files.defaultLanguage": "py",
   // The key that jumps straight to main.py, e.g. "Escape", "F12", "Ctrl+Shift+Space"
   "workbench.panicKey": "Escape",
@@ -88,6 +88,7 @@ function applySettings() {
     settings = { ...DEFAULTS, ...jsonc(settingsText) }
     problems = 0
     native?.setPanicKey?.(accel(settings['workbench.panicKey'] || 'Escape'))
+    retype()
   } catch {
     problems = 1 // keep the last good settings
   }
@@ -107,7 +108,24 @@ function setSetting(key, value) {
 }
 const level = () => (camo.LEVELS.includes(Number(settings['editor.tabSize'])) ? Number(settings['editor.tabSize']) : 2)
 const wrapOn = () => settings['editor.wordWrap'] !== 'off'
-const defaultExt = () => (camo.LANGS[settings['files.defaultLanguage']] ? settings['files.defaultLanguage'] : 'py')
+const defaultExt = () => {
+  const ext = String(settings['files.defaultLanguage'] ?? '').trim().replace(/^\.+/, '').toLowerCase()
+  return /^[\w+#-]+(\.[\w+#-]+)*$/.test(ext) ? ext : 'py'
+}
+// Conversation files carry files.defaultLanguage as their extension. When it changes, the ones that had the old
+// extension are renamed; the rest were given a language of their own.
+const firstRun = localStorage.getItem('vsc.fileType') == null // nothing picked yet: ask once, at startup
+function retype() {
+  const to = defaultExt()
+  const from = localStorage.getItem('vsc.fileType') ?? 'py'
+  localStorage.setItem('vsc.fileType', to)
+  if (from === to) return
+  for (const [id, c] of Object.entries(ws.chats))
+    if (c.name.toLowerCase().endsWith('.' + from)) c.name = freeName(c.parent, c.name.slice(0, -from.length) + to, id)
+  chatList = null
+  te.id = null
+  saveWs()
+}
 
 // ---- the workspace: folders and files the explorer shows ---------------------------------------------------------
 // Conversation files come from the services' thread lists; ws.chats keeps what the user did to them (rename, move,
@@ -252,8 +270,6 @@ const pathOf = (nd) => {
   for (let n = nd; n; n = n.parent ? nodeOf(n.parent) : null) parts.unshift(n.name)
   return parts
 }
-const langOf = (name) => (/\.json$/i.test(name) ? 'json' : /\.md$/i.test(name) ? 'md' : camo.lang(name))
-const LANG_NAME = (lang) => ({ json: 'JSON', md: 'Markdown' })[lang] ?? camo.LANGS[lang].name
 
 // sender labels: a digit-free note right above someone's message is their name in a group chat
 const prepare = (rows) =>
@@ -273,46 +289,68 @@ function headerFor(nd, rows) {
 }
 
 // ---- colouring ----------------------------------------------------------------------------------------------------
+// Each language's hl (camo.js) says how: one of the modes below, or code: comments, strings, numbers, its keywords.
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const STRING = String.raw`(?:\b[fFrRbBuU]{1,2})?(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|${'`'}(?:\\.|[^${'`'}\\])*${'`'})`
+const MODES = {
+  markup: [[String.raw`<!--.*?(?:-->|$)`, 'com'], [String.raw`<[\/!?]?(?=\w)`, 'punc'], [String.raw`(?<=<[\/!?]?)[\w:.-]+`, 'decl'], [String.raw`[\/?]?>`, 'punc'], [String.raw`[\w:@.#-]+(?==)`, 'key'], [String.raw`"[^"]*"|'[^']*'`, 'str'], [String.raw`\{[#:\/@]\w+`, 'kw'], [String.raw`&\w+;`, 'decl']],
+  css: [[String.raw`\/\*.*?(?:\*\/|$)`, 'com'], [STRING, 'str'], [String.raw`@[\w-]+`, 'kw'], [String.raw`\$[\w-]+|--[\w-]+`, 'key'], [String.raw`#[\da-fA-F]{3,8}\b`, 'num'], [String.raw`(?<=^\s*|[{;]\s*)[\w-]+(?=\s*:(?!:))`, 'key'], [String.raw`-?\b\d*\.?\d+(?:px|r?em|%|s|ms|vh|vw|deg|fr)?\b`, 'num'], [String.raw`!important`, 'kw'], [String.raw`[.#&%][\w-]+|::?[\w-]+`, 'fn'], [String.raw`[\w-]+(?=\()`, 'fn']],
+  data: [[String.raw`(?:^|(?<=\s))[#;].*$`, 'com'], [String.raw`^\s*\[\[?[^\]]*\]\]?`, 'type'], [String.raw`^\s*(?:-\s+)?[\w.$\/@-]+(?=\s*[:=])`, 'key'], [String.raw`"(?:\\.|[^"\\])*"|'[^']*'`, 'str'], [String.raw`\b(?:true|false|null|yes|no)\b`, 'decl'], [String.raw`-?\b\d+(?:\.\d+)?\b`, 'num']],
+  diff: [[String.raw`^(?:diff|index|---|\+\+\+) .*$`, 'kw'], [String.raw`^@@.*$`, 'decl'], [String.raw`^\+.*$`, 'num'], [String.raw`^-.*$`, 'str']],
+}
 const tokenizers = {}
 function tokenizer(lang) {
   if (tokenizers[lang]) return tokenizers[lang]
-  const hl = camo.LANGS[lang]?.hl ?? {}
-  const words = (list) => (list ? `\\b(${list.split(' ').join('|')})\\b` : '(?!)')
-  const comment = hl.line === '#' ? '#.*$' : '\\/\\/.*$|\\/\\*.*?(?:\\*\\/|$)'
-  const pre = lang === 'c' || lang === 'cpp' ? '^\\s*#\\s*\\w+' : '(?!)'
-  // 1 comment, 2 string (3 its quote), 4 number, 5 keyword, 6 declaration, 7 type, 8 preprocessor, 9 decorator, 10 call
-  return (tokenizers[lang] = new RegExp(`(${comment})|((?:\\b[fFrRbB])?(["'\`])(?:\\\\.|(?!\\3).)*\\3)|\\b(\\d+(?:\\.\\d+)?)\\b|${words(hl.kw)}|${words(hl.decl)}|${words(hl.types)}|(${pre})|(@\\w+)|\\b([A-Za-z_]\\w*)(?=\\s*!?\\()`, 'g'))
+  const L = camo.LANGS[lang]
+  const hl = L.hl
+  const words = (list) => list && `\\b(?:${list.split(' ').map(esc).join('|')})\\b`
+  let parts = MODES[hl.mode]
+  if (hl.mode === 'css' && L.comment === '// ') parts = [[String.raw`\/\/.*$`, 'com'], ...parts] // Sass and Less
+  parts ??= [
+    [(hl.com ?? [L.comment.trim()]).map((c) => esc(c) + (/\w$/.test(c) ? '\\b' : '') + '.*$').join('|'), 'com'],
+    [hl.str ?? STRING, 'str'],
+    ...(hl.extra ?? []),
+    [String.raw`\b\d+(?:\.\d+)?\b`, 'num'],
+    [words(hl.kw), 'kw'],
+    [words(hl.decl), 'decl'],
+    [words(hl.types), 'type'],
+    [hl.call ?? String.raw`\b[A-Za-z_]\w*(?=\s*!?\()`, 'fn'],
+  ]
+  parts = parts.filter(([source]) => source)
+  return (tokenizers[lang] = { re: new RegExp(parts.map(([source]) => `(${source})`).join('|'), hl.ci ? 'gi' : 'g'), classes: parts.map(([, cls]) => cls) })
 }
-const CLASS = [null, 'com', 'str', null, 'num', 'kw', 'decl', 'type', 'kw', 'fn', 'fn']
 function highlight(text, lang) {
   if (!text) return [text ?? '']
-  if (lang === 'txt') return [text]
-  if (lang === 'md') return markdownLine(text)
+  const mode = camo.LANGS[lang]?.hl.mode
+  if (mode === 'plain') return [text]
+  if (mode === 'md') return markdownLine(text)
   const out = []
   let at = 0
   const push = (m, cls) => {
     out.push(text.slice(at, m.index), span(cls, m[0]))
     at = m.index + m[0].length
   }
-  if (lang === 'log') {
+  if (mode === 'log') {
     const m = /^\s*(INFO|DEBUG|WARN|WARNING|ERROR|INPUT|TRACE)\b/.exec(text)
     if (m) push({ index: m.index, 0: m[0] }, 'lv-' + ({ WARNING: 'warn', INPUT: 'info', TRACE: 'debug' }[m[1]] ?? m[1].toLowerCase()))
     if (text.trimStart().startsWith('#')) return [span('com', text)]
     out.push(text.slice(at))
     return out
   }
-  if (lang === 'json') {
+  if (mode === 'json') {
     for (const m of text.matchAll(/(\/\/.*$)|("(?:\\.|[^"\\])*")(?=\s*:)|("(?:\\.|[^"\\])*")|\b(-?\d+(?:\.\d+)?)\b|\b(true|false|null)\b/g))
       push(m, m[1] ? 'com' : m[2] ? 'key' : m[3] ? 'str' : m[4] ? 'num' : 'decl')
     out.push(text.slice(at))
     return out
   }
-  for (const m of text.matchAll(tokenizer(lang))) push(m, CLASS[m.findIndex((g, i) => i && g)])
+  const { re, classes } = tokenizer(lang)
+  for (const m of text.matchAll(re)) push(m, classes[m.findIndex((g, i) => i && g !== undefined) - 1])
   out.push(text.slice(at))
   return out
 }
 // README.md and other markdown: headings and `inline code` get a colour.
-const markdownLine = (text) => (/^#+ /.test(text) ? [span('h', text)] : text.split(/(`[^`]*`)/).map((part) => (part.startsWith('`') ? span('str', part) : part)))
+const markdownLine = (text) =>
+  /^#+ /.test(text) ? [span('h', text)] : /^\s*<!--/.test(text) ? [span('com', text)] : text.split(/(`[^`]*`)/).map((part) => (part.startsWith('`') ? span('str', part) : part))
 const line = (...tokens) => {
   const el = document.createElement('div')
   el.className = 'line'
@@ -320,15 +358,17 @@ const line = (...tokens) => {
   return el
 }
 
-// ---- file icons, like the default "Seti" theme ------------------------------------------------------------------
-const ICONS = { py: ['python', '#519aba'], js: ['JS', '#cbcb41'], ts: ['TS', '#519aba'], java: ['coffee', '#cc3e44'], c: ['C', '#519aba'], cpp: ['C++', '#519aba'], go: ['GO', '#519aba'], rs: ['RS', '#6d8086'], log: ['output', '#6d8086'], json: ['json', '#cbcb41'], md: ['markdown', '#519aba'], txt: ['file-text', '#6d8086'] }
-function fileIcon(name) {
-  const ext = /\.([^.]+)$/.exec(name)?.[1]?.toLowerCase()
-  const [glyph, color] = /^readme(\.md)?$/i.test(name) ? ['info', '#519aba'] : ext === 'h' ? ['C', '#a074c4'] : !ext ? ['file', '#6d8086'] : ICONS[langOf(name)]
-  const el = /^[a-z-]+$/.test(glyph) ? span('file-icon codicon codicon-' + glyph, '') : span('file-icon text', glyph)
-  el.style.color = color
-  return el
+// ---- file icons: the Material Icon Theme's (icons/, MIT), picked the way VS Code picks an icon theme's icons ---------
+// the whole name, then the longest extension (a.spec.ts: spec.ts, then ts), then the language; an open folder: -open
+function iconOf(name, folder, open) {
+  const lower = name.toLowerCase()
+  if (folder) return (MATERIAL.folderNames[lower] ?? MATERIAL.folder) + (open ? '-open' : '')
+  if (MATERIAL.fileNames[lower]) return MATERIAL.fileNames[lower]
+  const parts = lower.split('.')
+  for (let i = 1; i < parts.length; i++) if (MATERIAL.fileExtensions[parts.slice(i).join('.')]) return MATERIAL.fileExtensions[parts.slice(i).join('.')]
+  return MATERIAL.languageIds[camo.lang(name, null)] ?? MATERIAL.file
 }
+const fileIcon = (name, folder, open) => h('img', { class: 'file-icon', src: `icons/${iconOf(name, folder, open)}.svg`, alt: '', draggable: 'false' })
 
 // ---- tabs -----------------------------------------------------------------------------------------------------------
 const tabs = load('vsc.tabs', { list: ['readme'], active: 'readme', closed: [] })
@@ -444,8 +484,7 @@ function renderExplorer() {
       const isNew = it.input && !it.id
       const folderish = it.folder || (isNew && it.kind === 'folder')
       if (folderish) twistie.append(codicon(it.open ? 'chevron-down' : 'chevron-right'))
-      row.append(twistie)
-      if (!folderish) row.append(fileIcon(isNew ? 'untitled' : it.name))
+      row.append(twistie, fileIcon(isNew ? '' : it.name, folderish, it.open))
       if (it.input) {
         const input = h('input', { spellcheck: 'false', value: editing.id ? it.name : '' })
         row.append(input)
@@ -841,7 +880,7 @@ function renderEditor() {
   }
   // breadcrumbs
   $('breadcrumbs').replaceChildren(
-    ...(nd ? pathOf(nd).slice(1) : []).flatMap((part, i, all) => [i ? codicon('chevron-right') : null, i === all.length - 1 ? fileIcon(part) : null, span('', part)].filter(Boolean)),
+    ...(nd ? pathOf(nd).slice(1) : []).flatMap((part, i, all) => [i ? codicon('chevron-right') : null, fileIcon(part, i < all.length - 1), span('', part)].filter(Boolean)),
   )
   // body
   const kind = nd?.kind
@@ -861,7 +900,6 @@ function renderChat(nd) {
   const live = liveThread(s) === nd.thread
   const rows = rowsOf(nd)
   const lang = camo.lang(nd.name)
-  const L = camo.LANGS[lang]
   if (!draft.textContent) seeds[nd.id] = `${nd.id}:${rows.length}` // a new spot in the file after every message
   const header = headerFor(nd, rows)
   const pending = live ? s.snap.pending : 0
@@ -874,15 +912,17 @@ function renderChat(nd) {
   const typing = file[at]
   const empty = s.away ? `not signed in to ${s.name} (the preview icon, top right, shows the sign-in page)` : 'nothing read from this chat yet'
   $('lines').replaceChildren(
-    ...(rows.length ? [] : [line(span('com', L.comment + empty))]),
+    ...(rows.length ? [] : [line(span('com', camo.comment(lang, empty)))]),
     ...file.slice(0, at).map((l) => codeLine(l, lang, nd)),
-    ...(notSent[nd.id] ? [line(typing.indent, span('com', `${L.comment}not sent: ${notSent[nd.id]}`))] : []),
-    ...(pending ? [line(typing.indent, span('com', `${L.comment}${pending} attachment(s) ready, Enter sends`))] : []),
+    ...(notSent[nd.id] ? [line(typing.indent, span('com', camo.comment(lang, `not sent: ${notSent[nd.id]}`)))] : []),
+    ...(pending ? [line(typing.indent, span('com', camo.comment(lang, `${pending} attachment(s) ready, Enter sends`)))] : []),
   )
   $('draft-pre').replaceChildren(typing.indent, ...highlight(typing.pre, lang))
   $('draft-post').replaceChildren(...highlight(typing.post, lang))
   $('after').replaceChildren(...file.slice(at + 1).map((l) => codeLine(l, lang, nd)))
-  inputLine.querySelectorAll('.q').forEach((q) => (q.hidden = !!L.quote))
+  const [open, close] = camo.quotes(lang) // "..." around what is typed; nothing for plain text
+  inputLine.querySelectorAll('.q').forEach((q, i) => (q.textContent = i ? close : open))
+  draft.parentElement.className = open ? 'str' : ''
   quotes()
   if (landing) {
     landing = false
@@ -895,7 +935,7 @@ function codeLine(l, lang, nd) {
   const L = camo.LANGS[lang]
   if (l.kind === 'code') return mentions(line(...highlight(l.text, lang)))
   if (l.kind === 'note') {
-    const el = line(l.indent, span('com', L.comment + l.text))
+    const el = line(l.indent, span('com', camo.comment(lang, l.text)))
     if (l.user) {
       el.lastChild.classList.add('mention')
       el.dataset.user = l.user
@@ -903,13 +943,14 @@ function codeLine(l, lang, nd) {
     }
     return el
   }
-  const args = [l.text != null && span(L.quote ? '' : 'str', (L.quote ?? camo.quote)(l.text)), (l.src || l.mi != null) && picture(l, lang, nd)].filter(Boolean)
+  const literal = camo.quotes(lang)[0] ? 'str' : '' // a string, or bare text (HTML, Markdown, plain text)
+  const args = [l.text != null && span(literal, L.quote(l.text)), (l.src || l.mi != null) && picture(l, lang, nd)].filter(Boolean)
   const el = line(
     l.indent,
     ...highlight(l.pre, lang),
     ...args.flatMap((arg, i) => (i ? [', ', arg] : [arg])),
     ...highlight(l.post, lang),
-    ...(l.media && !l.src && l.mi == null ? [span('com', `  ${L.comment}media`)] : []),
+    ...(l.media && !l.src && l.mi == null ? ['  ', span('com', camo.comment(lang, 'media'))] : []),
   )
   el.classList.add(l.kind)
   return el
@@ -936,13 +977,13 @@ function picture(l, lang, nd) {
     fromPage()
   }
   el.addEventListener('mouseenter', () => img.getAttribute('src') || (l.src ? (img.src = l.src) : fromPage()))
-  el.append(...highlight(L.open[0], lang), span('str', camo.quote(l.src ? camo.file(l.src) : 'media.jpg')), ...highlight(L.open[1], lang), img)
+  el.append(...highlight(L.open[0], lang), span(camo.quotes(lang)[0] ? 'str' : '', L.quote(l.src ? camo.file(l.src) : 'media.jpg')), ...highlight(L.open[1], lang), img)
   return el
 }
 
 // README, activity.log and main.py: generated text in the code view.
 function renderDoc(nd) {
-  const lang = langOf(nd.name)
+  const lang = camo.lang(nd.name)
   if (nd.kind === 'decoy') return renderDecoy(nd, lang)
   const sig = JSON.stringify([nd.kind, nd.name, nd.kind === 'readme' ? readme.length : [activity, level()]])
   if (sig === viewSig) return
@@ -986,7 +1027,7 @@ code.addEventListener('keydown', (e) => {
 
 // ---- a real editor for the user's own files and settings.json --------------------------------------------------------
 function renderText(nd) {
-  const lang = langOf(nd.name)
+  const lang = camo.lang(nd.name)
   if (te.id !== nd.id || te.lang !== lang) {
     te.id = nd.id
     te.lang = lang
@@ -1018,8 +1059,7 @@ te.input.addEventListener('input', () => {
 })
 for (const ev of ['keyup', 'click', 'select']) te.input.addEventListener(ev, paintText)
 te.input.addEventListener('keydown', (e) => {
-  const L = camo.LANGS[te.lang] ?? camo.LANGS.py
-  const unit = L.indent ?? '    '
+  const unit = camo.LANGS[te.lang].indent
   const { selectionStart: from, selectionEnd: to, value } = te.input
   const lineStart = value.lastIndexOf('\n', from - 1) + 1
   const insert = (text) => document.execCommand('insertText', false, text) // keeps undo working
@@ -1045,14 +1085,17 @@ te.input.addEventListener('keydown', (e) => {
 })
 // Toggles a line comment on the selected lines, as Cmd+/ does.
 function commentLines(from, to) {
-  const lang = te.lang
-  const mark = lang === 'json' || lang === 'js' || lang === 'ts' || lang === 'java' || lang === 'c' || lang === 'cpp' || lang === 'go' || lang === 'rs' ? '// ' : '# '
+  const { comment: mark, commentEnd: tail = '' } = camo.LANGS[te.lang] // "# ", or "<!-- " and " -->"
   const value = te.input.value
   const start = value.lastIndexOf('\n', from - 1) + 1
   const end = value.indexOf('\n', to) < 0 ? value.length : value.indexOf('\n', to)
   const lines = value.slice(start, end).split('\n')
   const on = lines.every((l) => !l.trim() || l.trimStart().startsWith(mark.trim()))
-  const next = lines.map((l) => (!l.trim() ? l : on ? l.replace(mark.trim() + ' ', '').replace(mark.trim(), '') : l.replace(/^(\s*)/, `$1${mark}`))).join('\n')
+  const strip = (l) => {
+    const body = l.replace(mark, '').replace(mark.trim(), '')
+    return tail && body.trimEnd().endsWith(tail.trim()) ? body.trimEnd().slice(0, -tail.trim().length).trimEnd() : body
+  }
+  const next = lines.map((l) => (!l.trim() ? l : on ? strip(l) : l.replace(/^(\s*)/, `$1${mark}`) + tail)).join('\n')
   te.input.setSelectionRange(start, end)
   document.execCommand('insertText', false, next)
   te.input.setSelectionRange(start, start + next.length)
@@ -1072,7 +1115,8 @@ function focusDraft() {
 }
 function focusEditor() {
   const nd = activeNode()
-  if (nd?.kind === 'chat') focusDraft()
+  if (quickState) quickState.el.querySelector('input').focus() // a picker is open: it keeps the keyboard
+  else if (nd?.kind === 'chat') focusDraft()
   else if (nd?.kind === 'file' || nd?.kind === 'settings') te.input.focus()
   else if (nd) code.focus()
 }
@@ -1348,7 +1392,7 @@ function quick({ placeholder, value = '', items, accept, cancel, mode }) {
     state.at = 0
     list.replaceChildren(
       ...(state.items.length
-        ? state.items.map((it, i) => h('div', { class: 'quick-item' + (i ? '' : ' selected'), 'data-i': i }, it.icon ? codicon(it.icon) : it.fileIcon ? fileIcon(it.label) : null, span('label', ''), it.description ? span('description', it.description) : null, it.keys ? span('keys', it.keys) : null))
+        ? state.items.map((it, i) => h('div', { class: 'quick-item' + (i ? '' : ' selected'), 'data-i': i }, it.icon ? codicon(it.icon) : it.file != null ? fileIcon(it.file) : it.fileIcon ? fileIcon(it.label) : null, span('label', ''), it.description ? span('description', it.description) : null, it.keys ? span('keys', it.keys) : null))
         : [h('div', { class: 'quick-empty', text: input.value ? 'No matching results' : '' })]),
     )
     list.querySelectorAll('.quick-item .label').forEach((label, i) => label.append(...marked(state.items[i].label, state.items[i].match)))
@@ -1359,7 +1403,7 @@ function quick({ placeholder, value = '', items, accept, cancel, mode }) {
     closeQuick(false)
     accept(it, q)
   }
-  input.addEventListener('input', later(show, mode === 'async' ? 250 : 0))
+  input.addEventListener('input', mode === 'async' ? later(show, 250) : show) // filtered before an Enter right after it
   input.addEventListener('keydown', (e) => {
     e.stopPropagation()
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -1378,7 +1422,7 @@ function quick({ placeholder, value = '', items, accept, cancel, mode }) {
     const item = e.target.closest('.quick-item')
     if (item) choose(Number(item.dataset.i))
   })
-  input.addEventListener('blur', () => setTimeout(() => quickState === state && closeQuick(), 100))
+  input.addEventListener('blur', () => setTimeout(() => quickState === state && document.activeElement !== input && closeQuick(), 100))
   input.focus()
   if (mode === 'prefix') input.setSelectionRange(value.length, value.length) // keep the ">" of the command palette
   else input.select()
@@ -1389,7 +1433,9 @@ function closeQuick(cancelled = true) {
   const state = quickState
   if (!state) return
   quickState = null
+  const had = state.el.contains(document.activeElement)
   state.el.remove()
+  if (had) focusEditor() // the keyboard goes back to the editor, as in VS Code
   if (cancelled) state.cancel?.()
 }
 // highlight what matched: indexes of the label's matched characters
@@ -1457,34 +1503,65 @@ function commandItems(q) {
     .filter(Boolean)
     .sort((a, b) => b.score - a.score)
 }
+// Select Language Mode (the language in the status bar): every language VS Code knows, by name. Picking one gives
+// the file that language's extension, the way the language of a file on disk follows its name.
 function changeLanguage() {
   const nd = activeNode()
   if (!nd || isFolder(nd) || nd.kind === 'readme' || nd.kind === 'settings') return
-  const langs = [...Object.keys(camo.LANGS), 'json', 'md']
-  const exts = { json: 'json', md: 'md' }
+  const current = camo.lang(nd.name)
+  const langs = Object.entries(camo.LANGUAGES).filter(([, l]) => l.exts.length)
   quick({
     placeholder: 'Select Language Mode',
     items: (q) =>
       langs
-        .map((lang) => {
-          const name = LANG_NAME(lang)
-          const m = fuzzy(name, q)
-          return m && { label: name, description: `(${lang})`, lang, match: m.match, score: m.score, fileIcon: false }
+        .map(([id, l]) => {
+          const m = fuzzy(l.name, q) ?? (fuzzy(id, q) && { score: 0, match: [] })
+          return m && { label: l.name, description: `(${id})${id === current ? ' - Configured Language' : ''}`, file: 'x' + l.exts[0], ext: l.exts[0].slice(1), match: m.match, score: m.score }
         })
         .filter(Boolean)
-        .sort((a, b) => b.score - a.score),
+        .sort((a, b) => b.score - a.score || a.label.localeCompare(b.label)),
     accept: (it) => {
       if (!it) return
-      // the language is the file's extension, as for the files on disk
-      const name = nd.name.replace(/(\.[^.]*)?$/, '.' + (exts[it.lang] ?? it.lang))
-      const fresh = freeName(nd.parent, name, nd.id)
-      if (ws.chats[nd.id]) ws.chats[nd.id].name = fresh
-      else if (ws.nodes[nd.id]) ws.nodes[nd.id].name = fresh
-      chatList = null
-      te.id = null
-      saveWs()
-      render()
+      // the whole extension of the old language goes (a.agent.md -> a.html), else the last one
+      const old = camo.LANGUAGES[current]?.exts.filter((e) => nd.name.toLowerCase().endsWith(e.toLowerCase())).sort((a, b) => b.length - a.length)[0]
+      renameTo(nd, (old ? nd.name.slice(0, -old.length) : nd.name.replace(/\.[^.]*$/, '')) + '.' + it.ext)
     },
+  })
+}
+function renameTo(nd, name) {
+  const fresh = freeName(nd.parent, name, nd.id)
+  if (ws.chats[nd.id]) ws.chats[nd.id].name = fresh
+  else if (ws.nodes[nd.id]) ws.nodes[nd.id].name = fresh
+  chatList = null
+  te.id = null
+  saveWs()
+  render()
+}
+// The file type of the conversation files (files.defaultLanguage), asked on the first start: every extension VS Code
+// has a language for, and every one the icon theme has an icon for. The usual ones first.
+const POPULAR = 'py js ts jsx tsx java kt swift c cpp h cs go rs dart php rb sh ps1 bat sql html css scss json yaml toml md txt log lua pl r jl scala ex erl hs ml clj fs vb m groovy coffee zig vue svelte tf sol graphql csv xml ini env diff tex mk cmake'.split(' ')
+function fileTypes() {
+  const exts = new Set([...Object.values(camo.LANGUAGES).flatMap((l) => l.exts.map((e) => e.slice(1).toLowerCase())), ...Object.keys(MATERIAL.fileExtensions)])
+  const rank = (ext) => (POPULAR.includes(ext) ? POPULAR.indexOf(ext) : camo.lang('x.' + ext, null) ? 1000 : 2000)
+  return [...exts].filter((ext) => /^[\w+#-]+(\.[\w+#-]+)*$/.test(ext)).sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+}
+function pickFileType() {
+  const current = defaultExt()
+  const all = fileTypes().map((ext) => ({ label: '.' + ext, description: camo.LANGS[camo.lang('x.' + ext)].name + (ext === current ? ' (current)' : ''), file: 'x.' + ext, ext }))
+  quick({
+    placeholder: 'Select the file type for conversations (files.defaultLanguage), e.g. py, kt, swift, sql',
+    items: (q) => {
+      const query = q.trim().replace(/^\./, '')
+      if (!query) return all
+      return all
+        .map((it) => {
+          const m = fuzzy(it.ext, query)
+          return m ? { ...it, score: m.score + 2000, match: m.match.map((i) => i + 1) } : it.description.toLowerCase().includes(query.toLowerCase()) && { ...it, score: 1, match: [] }
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score)
+    },
+    accept: (it) => it && it.ext !== current && setSetting('files.defaultLanguage', it.ext),
   })
 }
 
@@ -1577,6 +1654,7 @@ const COMMANDS = {
   'deleteFile': { title: 'File: Delete', run: () => remove(selected ?? tabs.active) },
   'editor.action.toggleWordWrap': { title: 'View: Toggle Word Wrap', key: 'Alt+Z', run: () => setSetting('editor.wordWrap', wrapOn() ? 'off' : 'on') },
   'workbench.action.editor.changeLanguageMode': { title: 'Change Language Mode', run: () => changeLanguage() },
+  'direct.fileType': { title: 'Direct: Change File Type of Conversations...', run: () => pickFileType() },
   'workbench.action.debug.start': { title: 'Debug: Start Debugging', key: 'F5', run: () => runFile() },
   'workbench.action.debug.run': { title: 'Debug: Run Without Debugging', key: 'Ctrl+F5', run: () => runFile() },
   'direct.new': { title: 'Direct: New Message...', run: () => newChat() },
@@ -1845,9 +1923,9 @@ async function runFile() {
   const nd = activeNode()
   await showTerminal()
   if (nd?.kind !== 'file' || !native?.term || native.platform === 'win32') return
-  const lang = langOf(nd.name)
-  const runner = { py: 'python3 -', js: 'node -' }[lang]
-  if (!runner) return termWrite(`No runner for ${LANG_NAME(lang)} files.\n`)
+  const lang = camo.lang(nd.name)
+  const runner = { python: 'python3 -', javascript: 'node -', shellscript: 'bash -s' }[lang]
+  if (!runner) return termWrite(`No runner for ${camo.LANGS[lang].name} files.\n`)
   const tag = 'EOF_' + Math.random().toString(36).slice(2, 8)
   termWrite(promptText() + `${runner.split(' ')[0]} ${nd.name}\n`)
   term.running = true
@@ -1917,12 +1995,12 @@ function toast(text) {
 // ---- status bar, title, sidebar, panel ----------------------------------------------------------------------------------------
 function renderStatus() {
   const nd = activeNode()
-  const lang = nd && !isFolder(nd) ? langOf(nd.name) : null
+  const lang = nd && !isFolder(nd) ? camo.lang(nd.name) : null
   let ln = 1
   let col = 1
   if (nd?.kind === 'chat' && document.activeElement === draft) {
     ln = $('lines').children.length + 1
-    col = $('draft-pre').textContent.length + (draft.textContent && !camo.LANGS[camo.lang(nd.name)].quote ? 1 : 0) + caretOffset() + 1
+    col = $('draft-pre').textContent.length + (draft.textContent ? camo.quotes(camo.lang(nd.name))[0].length : 0) + caretOffset() + 1
   } else if ((nd?.kind === 'file' || nd?.kind === 'settings') && !$('text-editor').hidden) {
     const before = te.input.value.slice(0, te.input.selectionStart).split('\n')
     ln = before.length
@@ -1934,8 +2012,8 @@ function renderStatus() {
   }
   $('cursor').textContent = `Ln ${ln}, Col ${col}`
   $('spaces').textContent = 'Spaces: ' + level()
-  $('lang').textContent = !lang ? 'Plain Text' : lang === 'txt' ? 'Plain Text' : (lang === 'py' ? '{} ' : '') + (nd.kind === 'settings' ? 'JSON with Comments' : LANG_NAME(lang))
-  $('python').hidden = lang !== 'py'
+  $('lang').textContent = !lang ? 'Plain Text' : (lang === 'python' ? '{} ' : '') + camo.LANGS[lang].name
+  $('python').hidden = lang !== 'python'
   $('errors').textContent = problems
 }
 function renderTitle() {
@@ -2023,3 +2101,4 @@ fetch('README.md')
 applySettings()
 if (tabs.active) activate(tabs.active, { record: true })
 poll()
+if (firstRun) setTimeout(pickFileType, 800)

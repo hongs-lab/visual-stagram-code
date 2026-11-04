@@ -202,8 +202,8 @@ main { display: flex; min-height: 0; }
 .deco { flex: none; margin-left: 6px; font-size: 12px; }
 .untracked > .label, .untracked > .deco { color: #73c991; }
 .modified > .label, .modified > .deco { color: #e2c08d; }
-.file-icon { width: 16px; height: 16px; flex: none; display: grid; place-items: center; font-size: 14px; }
-.file-icon.text { font: 700 8px/16px -apple-system, 'Segoe UI', sans-serif; letter-spacing: -0.3px; }
+.file-icon { width: 16px; height: 16px; flex: none; }
+.row .file-icon { margin-right: 4px; }
 
 .search-box { padding: 0 12px 0 20px; display: flex; flex-direction: column; gap: 6px; }
 .field { position: relative; display: flex; align-items: center; background: var(--input); border: 1px solid var(--input-border); border-radius: 2px; }
@@ -325,6 +325,7 @@ webview { position: absolute; top: 0; left: 0; width: 1400px; height: 2400px; }
 .com { color: #6a9955; }
 .type { color: #4ec9b0; }
 .key { color: #9cdcfe; }
+.punc { color: #808080; }
 .lv-info { color: #4ec9b0; }
 .lv-debug { color: #808080; }
 .lv-warn { color: #dcdcaa; }
@@ -605,6 +606,7 @@ kbd { padding: 0 5px; border: 1px solid #ffffff33; border-bottom-color: #ffffff2
 <script src="scrape.js"></script>
 <script src="telegram.js"></script>
 <script src="camo.js"></script>
+<script src="icons/material.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

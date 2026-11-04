@@ -14,6 +14,10 @@ VS Code처럼 보이는 인스타그램(과 텔레그램) DM 앱. 대화가 코�
 왼쪽 EXPLORER의 `direct` 폴더 안 파일 하나가 대화방 하나입니다. 이름은 영어로 바뀌어 보입니다 (`김민수` → `kim_minsu.py`).
 파일을 누르면 대화가 탭으로 열립니다. 이 설명서는 `README.md`를 누르면 다시 볼 수 있습니다.
 
+처음 실행하면 대화 파일의 확장자를 고르는 창이 뜹니다. VS Code가 아는 확장자와 Material Icon Theme에 아이콘이 있는 확장자를 모두 고를 수 있습니다
+(`.py` `.js` `.kt` `.swift` `.sql` `.html` `.md` ...). 확장자에 맞는 언어의 코드로 보입니다. 이름이나 언어를 모르면 `kot`, `Kotlin` 처럼 쳐서 찾으면 됩니다.
+나중에 바꾸려면 `Cmd+Shift+P` > `Direct: Change File Type of Conversations...` 를 쓰세요
+
 - 안 읽은 대화는 git의 새 파일처럼 초록색 `U`, 안 읽은 대화가 든 폴더는 `●` 로 표시됩니다.
   안 읽은 수는 왼쪽 소스 제어 아이콘과 Dock(Windows는 작업 표시줄)에 숫자로 뜹니다
 - 목록 아래쪽에 묻힌 단체방: 탐색기를 맨 아래까지 내리면 이전 대화를 더 불러옵니다.
@@ -49,8 +53,8 @@ VS Code처럼 보이는 인스타그램(과 텔레그램) DM 앱. 대화가 코�
 
 ## 6. 파일처럼 다루기
 
-- 이름 바꾸기 : `F2` 또는 오른쪽 클릭 > Rename. 확장자를 바꾸면 언어도 바뀝니다
-  (`.py` `.js` `.ts` `.java` `.c` `.cpp` `.go` `.rs` `.log` `.txt`). 상태 줄의 언어 이름을 눌러도 됩니다
+- 이름 바꾸기 : `F2` 또는 오른쪽 클릭 > Rename. 확장자를 바꾸면 그 파일만 언어가 바뀝니다 (VS Code가 아는 언어 전부).
+  상태 줄의 언어 이름을 누르면 언어 목록에서 고를 수 있습니다
 - 새 파일/폴더 : 탐색기 위 아이콘, `Cmd+N`. 직접 만든 파일에는 진짜 코드를 쓸 수 있고 (`Tab`, 자동 들여쓰기, `Cmd+/` 주석),
   `.py`/`.js` 파일은 `F5` 로 아래 터미널에서 실행됩니다
 - 끌어다 놓기 : 대화 파일을 폴더로 옮겨 정리합니다 (예: `groups` 폴더에 단체방)
@@ -69,7 +73,7 @@ VS Code처럼 보이는 인스타그램(과 텔레그램) DM 앱. 대화가 코�
 
 - `editor.tabSize` : 위장 코드 양 (0, 2, 4, 8). 상태 줄의 `Spaces: 2` 를 눌러도 바뀝니다. `0` 이면 메시지 줄만 보입니다
 - `editor.wordWrap` : 긴 줄 줄바꿈 (`"on"`/`"off"`)
-- `files.defaultLanguage` : 새 대화 파일의 언어
+- `files.defaultLanguage` : 대화 파일의 확장자 (예: `"py"`, `"kt"`, `"sql"`). 바꾸면 이전 확장자였던 대화 파일이 모두 새 확장자로 바뀝니다
 - `workbench.panicKey` : 바로 `main.py` 로 가는 키 (예: `"Escape"`, `"F12"`, `"Ctrl+Shift+Space"`)
 - `notifications.enabled`, `notifications.showPreview` : 새 메시지 알림. 이미 띄운 알림은 껐다 켜도 다시 뜨지 않습니다
 - `window.title` : 창 제목
@@ -82,6 +86,7 @@ VS Code처럼 보이는 인스타그램(과 텔레그램) DM 앱. 대화가 코�
 - `Cmd+J` (터미널만은 Ctrl+백틱) : 아래 패널. 터미널은 진짜 셸이라 명령이 실제로 실행됩니다
 - `Cmd+P` 파일 찾기, `Cmd+Shift+P` 명령 팔레트, `Cmd+B` 사이드바 접기
 - 카카오톡은 웹 버전이 없어서 이 방식으로 넣을 수 없습니다
+- 파일·폴더 아이콘은 [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme) (MIT, `icons/LICENSE`) 의 것입니다
 
 ## 10. 쓰던 VS Code에서 쓰기 (확장)
 
@@ -91,6 +96,7 @@ VS Code처럼 보이는 인스타그램(과 텔레그램) DM 앱. 대화가 코�
 - 검색에 나오지 않는 에디터(Cursor 등)는 `visual-stagram-code.vsix` 를 받아 확장 보기 > `...` > "VSIX에서 설치" 로 설치합니다
 - 탐색기 아래 `DIRECT` 목록에서 `kim_minsu.py` 같은 파일을 누르면 대화가 열립니다. 안 읽은 대화는 `U` 로 표시됩니다
 - 대화 파일 마지막의 `reply = input("")` 같은 줄에 바로 쓰고 Enter를 누르면 전송됩니다
+- 설정 `visualStagram.fileType` (또는 명령 `Visual Stagram: 대화 파일 형식 바꾸기`) 로 확장자를 바꿉니다. 아이콘은 쓰고 있는 아이콘 테마를 따릅니다
 - 확장은 이 앱을 창 없이 뒤에서 실행해 씁니다. 따로 켜 둘 필요는 없습니다
 
 ## 설치

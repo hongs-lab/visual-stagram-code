@@ -1,6 +1,6 @@
 # Visual Stagram Code (VS Code 확장)
 
-쓰던 VS Code 안에서 인스타그램 DM을 파이썬 코드처럼 봅니다.
+쓰던 VS Code 안에서 인스타그램 DM을 코드처럼 봅니다. 기본은 파이썬이고, 확장자를 바꾸면 그 언어의 코드가 됩니다.
 
 ## 필요한 것
 
@@ -18,3 +18,5 @@
 - `Alt+↑` 또는 맨 위로 스크롤 : 이전 메시지 불러오기
 - 사진 줄에 마우스를 올리면 미리보기가 뜹니다
 - 설정 `visualStagram.camouflage` (0, 2, 4, 8) : 메시지 사이에 섞는 위장 코드의 양
+- 설정 `visualStagram.fileType` (`py`, `js`, `kt`, `swift`, `sql`, `html`, `md` ...) : 대화 파일의 확장자.
+  명령 `Visual Stagram: 대화 파일 형식 바꾸기` 로 목록에서 골라도 됩니다. 아이콘은 쓰고 있는 아이콘 테마(예: Material Icon Theme)를 따릅니다

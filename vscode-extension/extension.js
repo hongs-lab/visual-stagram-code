@@ -1,4 +1,4 @@
-// Instagram DMs inside real VS Code, as Python files.
+// Instagram DMs inside real VS Code, as source files (Python unless visualStagram.fileType says otherwise).
 // This is only the editor side. The Visual Stagram Code desktop app is the engine: it holds the
 // Instagram session and talks to us over a local socket (see bridge.js in the app).
 const vscode = require('vscode')
@@ -19,6 +19,7 @@ const bridgePath = () =>
     : path.join(os.homedir(), '.visual-stagram-code.sock'))
 
 // Conversations are files with English names (김민수 -> kim_minsu.py), like in the app; slugs maps thread -> file name.
+// The extension (visualStagram.fileType) picks the language they are written in, and the icon theme's icon.
 let slugs = new Map()
 function nameFiles(threads) {
   const taken = new Set()
@@ -32,8 +33,10 @@ function nameFiles(threads) {
     }),
   )
 }
-const uriFor = (name) => vscode.Uri.from({ scheme: SCHEME, path: `/direct/${slugs.get(name) ?? camo.slug(name)}.py` })
 const config = () => vscode.workspace.getConfiguration('visualStagram')
+const fileType = () => String(config().get('fileType') || 'py').trim().replace(/^\.+/, '') || 'py'
+const uriFor = (name) => vscode.Uri.from({ scheme: SCHEME, path: `/direct/${slugs.get(name) ?? camo.slug(name)}.${fileType()}` })
+const langOf = () => camo.lang('x.' + fileType())
 
 function activate(context) {
   let socket = null
@@ -128,14 +131,16 @@ function activate(context) {
     const uri = uriFor(active)
     const doc = fileOf(uri)
     if (!doc.draft) doc.seed = `${active}:${state.rows.length}` // picks the code around the input line; frozen while there is text in it
-    const lines = camo(state.rows, config().get('camouflage'), { seed: doc.seed })
+    const lang = langOf()
+    const lines = camo(state.rows, config().get('camouflage'), { seed: doc.seed, lang })
     const input = lines.find((l) => l.kind === 'draft')
     if (state.pending) lines.splice(lines.indexOf(input), 0, { kind: 'note', indent: input.indent, text: `${state.pending} attachment(s) ready, Enter sends` })
-    const text = lines.map(camo.text)
+    const text = lines.map((l) => camo.text(l, lang))
     const at = lines.indexOf(input)
     // The quotes stay even with nothing typed: adding them mid-typing would break a Korean (IME) composition.
-    doc.head = [...text.slice(0, at), `${input.indent}${input.pre}"`].join('\n')
-    doc.tail = [`"${input.post}`, ...text.slice(at + 1)].join('\n').trimEnd() + '\n' // nothing for "trim on save" settings to remove
+    const [open, close] = camo.quotes(lang)
+    doc.head = [...text.slice(0, at), `${input.indent}${input.pre}${open}`].join('\n')
+    doc.tail = [`${close}${input.post}`, ...text.slice(at + 1)].join('\n').trimEnd() + '\n' // nothing for "trim on save" settings to remove
     doc.lines = lines
     const document = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString())
     if (document) enqueue(() => write(document))
@@ -192,7 +197,7 @@ function activate(context) {
       getChildren: () => state.threads.map((name, index) => ({ name, index })),
       getTreeItem({ name, index }) {
         const item = new vscode.TreeItem(uriFor(name).path.split('/').pop())
-        item.resourceUri = uriFor(name) // with ThemeIcon.File this gives it the theme's Python icon
+        item.resourceUri = uriFor(name) // with ThemeIcon.File this gives it the icon theme's icon for the extension
         item.iconPath = vscode.ThemeIcon.File
         item.command = { command: 'visualStagram.open', title: 'Open', arguments: [index, name] }
         return item
@@ -205,7 +210,7 @@ function activate(context) {
         onDidChangeFile: new vscode.EventEmitter().event, // never fires: open files change through edits (write)
         watch: () => new vscode.Disposable(() => {}),
         // mtime stays 0, so a save never looks like it overwrites a newer file
-        stat: (uri) => ({ type: uri.path.endsWith('.py') ? vscode.FileType.File : vscode.FileType.Directory, ctime: 0, mtime: 0, size: 0 }),
+        stat: (uri) => ({ type: uri.path.split('/').length > 2 ? vscode.FileType.File : vscode.FileType.Directory, ctime: 0, mtime: 0, size: 0 }), // /direct/<file>
         readFile(uri) {
           const doc = fileOf(uri)
           doc.shown = { head: doc.head, tail: doc.tail }
@@ -299,7 +304,13 @@ function activate(context) {
         },
       },
     ),
-    vscode.workspace.onDidChangeConfiguration((e) => e.affectsConfiguration('visualStagram.camouflage') && refresh()),
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('visualStagram.fileType')) {
+        update(state) // the files are renamed: open the conversation again under its new name
+        const index = state.threads.indexOf(active)
+        if (index !== -1) vscode.commands.executeCommand('visualStagram.open', index, active)
+      } else if (e.affectsConfiguration('visualStagram.camouflage')) refresh()
+    }),
   )
 
   // ---- commands -------------------------------------------------------------------------------------------------
@@ -345,6 +356,15 @@ function activate(context) {
   command('visualStagram.retry', () => {
     launched = false
     connect()
+  })
+  // every language camo.js can write, by its usual extension
+  command('visualStagram.fileType', async () => {
+    const items = Object.values(camo.LANGUAGES)
+      .filter((l) => l.exts.length)
+      .map((l) => ({ label: l.exts[0], description: l.name }))
+      .sort((a, b) => a.description.localeCompare(b.description))
+    const pick = await vscode.window.showQuickPick(items, { placeHolder: `대화 파일 형식 (지금: .${fileType()})`, matchOnDescription: true })
+    if (pick) config().update('fileType', pick.label.slice(1), vscode.ConfigurationTarget.Global)
   })
   command('visualStagram.camouflage', async () => {
     const pick = await vscode.window.showQuickPick(camo.LEVELS.map(String), { placeHolder: `Spaces: ${config().get('camouflage')}` })
