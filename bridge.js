@@ -2,7 +2,7 @@
 // It is a Unix socket in the home directory (a named pipe on Windows), not a TCP port, so only
 // this user's own programs can reach it and web pages can't.
 // Protocol: one JSON object per line.
-//   app -> client   { type: 'state', away, ok, threads, rows, pending, canSend }  on every change
+//   app -> client   { type: 'state', away, ok, threads, unread, rows, pending, canSend }  on every change
 //   client -> app   { type: 'open', index } | { type: 'send', text } | { type: 'page', dir }
 //                   | { type: 'attach', files: [{ name, type, data }] } | { type: 'show' }
 const net = require('net')
@@ -25,6 +25,8 @@ const MAX_LINE = 64 * 1024 * 1024 // an attachment arrives as one base64 line
 module.exports = function bridge({ page, show, onClients }) {
   const clients = new Set()
   let last = ''
+  let threads = [] // the last list sent, so { type: 'open', index } can be turned back into a name
+  let opened = null // the conversation the editor last opened: messages only go there
 
   const tick = async () => {
     const wc = page()
@@ -32,7 +34,10 @@ module.exports = function bridge({ page, show, onClients }) {
     let state = { type: 'state', away: true, ok: false, threads: [], rows: [], pending: 0, canSend: false }
     try {
       if (new URL(wc.getURL()).pathname.startsWith('/direct')) {
-        state = { ...state, away: false, ...(await wc.executeJavaScript(GUEST.scrape)) }
+        const snap = await wc.executeJavaScript(GUEST.scrape)
+        threads = snap.threads
+        // the extension knows threads by name only (it predates unread and list positions)
+        state = { ...state, away: false, ok: snap.ok, threads: snap.threads.map((t) => t.name), unread: snap.threads.filter((t) => t.unread).map((t) => t.name), rows: snap.rows, pending: snap.pending, canSend: snap.canSend }
       }
     } catch {
       return // not loaded yet or mid-navigation
@@ -46,18 +51,19 @@ module.exports = function bridge({ page, show, onClients }) {
 
   const run = (js) => page()?.executeJavaScript(js)
   const commands = {
-    open: ({ index }) => run(GUEST.open(index)),
+    open({ index }) {
+      const t = threads[index]
+      if (!t) return
+      opened = t.name
+      return run(GUEST.openThread(t.name, t.y))
+    },
     page: ({ dir }) => run(GUEST.page(dir)),
     attach: ({ files }) =>
       Array.isArray(files) &&
       run(GUEST.attach(files.map((f) => ({ name: String(f.name), type: String(f.type), data: String(f.data) })))),
     show: () => show(),
-    async send({ text }) {
-      const wc = page()
-      if (!wc || !(await wc.executeJavaScript(GUEST.focus))) return
-      if (text) await wc.insertText(String(text))
-      for (const type of ['keyDown', 'char', 'keyUp']) wc.sendInputEvent({ type, keyCode: 'Enter' })
-    },
+    // straight into Instagram's editor, no focus involved (see send() in scrape.js)
+    send: ({ text }) => run(GUEST.send(String(text ?? ''), opened)),
   }
 
   const server = net.createServer((socket) => {

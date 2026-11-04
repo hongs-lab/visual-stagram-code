@@ -18,14 +18,28 @@ const bridgePath = () =>
     ? `\\\\.\\pipe\\visual-stagram-code-${os.userInfo().username}`
     : path.join(os.homedir(), '.visual-stagram-code.sock'))
 
-const uriFor = (name) => vscode.Uri.from({ scheme: SCHEME, path: `/direct/${name}.py` })
+// Conversations are files with English names (김민수 -> kim_minsu.py), like in the app; slugs maps thread -> file name.
+let slugs = new Map()
+function nameFiles(threads) {
+  const taken = new Set()
+  slugs = new Map(
+    threads.map((name) => {
+      const base = camo.slug(name)
+      let file = base
+      for (let n = 2; taken.has(file); n++) file = `${base}_${n}`
+      taken.add(file)
+      return [name, file]
+    }),
+  )
+}
+const uriFor = (name) => vscode.Uri.from({ scheme: SCHEME, path: `/direct/${slugs.get(name) ?? camo.slug(name)}.py` })
 const config = () => vscode.workspace.getConfiguration('visualStagram')
 
 function activate(context) {
   let socket = null
   let retry = null
   let launched = false // we start the app at most once per window
-  let state = { away: true, ok: false, threads: [], rows: [], pending: 0, canSend: false }
+  let state = { away: true, ok: false, threads: [], unread: [], rows: [], pending: 0, canSend: false }
   let active = null // name of the thread whose file is live
   let switchedAt = 0
   let lastPaged = 0
@@ -40,6 +54,7 @@ function activate(context) {
   let disposed = false
 
   const treeChanged = new vscode.EventEmitter()
+  const decorationsChanged = new vscode.EventEmitter()
   const say = (message) => socket?.write(JSON.stringify(message) + '\n')
   const status = () => vscode.commands.executeCommand('setContext', 'visualStagram.status', !socket ? 'offline' : state.away ? 'away' : 'ok')
   const switching = () => Date.now() - switchedAt < 1200 // right after switching threads the engine still reports the previous conversation
@@ -100,9 +115,11 @@ function activate(context) {
 
   // ---- state -> explorer + file ---------------------------------------------------------------
   function update(next) {
-    state = next
+    state = { unread: [], ...next }
+    nameFiles(state.threads)
     status()
     treeChanged.fire()
+    decorationsChanged.fire()
     refresh()
   }
 
@@ -156,6 +173,8 @@ function activate(context) {
       doc.ours = version + 1 // the change event of this edit is not the user typing
     }
     doc.shown = { head, tail }
+    doc.shownLines = doc.lines // what is on screen now: the bars follow these, not lines still on their way
+    for (const editor of editorsOf(document)) decorate(editor)
     const landing = land === document.uri.toString() && !switching()
     if (landing) land = null
     for (const editor of landing ? editorsOf(document) : waiting) {
@@ -172,7 +191,7 @@ function activate(context) {
       onDidChangeTreeData: treeChanged.event,
       getChildren: () => state.threads.map((name, index) => ({ name, index })),
       getTreeItem({ name, index }) {
-        const item = new vscode.TreeItem(name + '.py')
+        const item = new vscode.TreeItem(uriFor(name).path.split('/').pop())
         item.resourceUri = uriFor(name) // with ThemeIcon.File this gives it the theme's Python icon
         item.iconPath = vscode.ThemeIcon.File
         item.command = { command: 'visualStagram.open', title: 'Open', arguments: [index, name] }
@@ -200,6 +219,14 @@ function activate(context) {
       },
       { isCaseSensitive: true },
     ),
+    // unread conversations look like untracked files: green, with a U (in the list and on their tabs)
+    vscode.window.registerFileDecorationProvider({
+      onDidChangeFileDecorations: decorationsChanged.event,
+      provideFileDecoration(uri) {
+        if (uri.scheme !== SCHEME || !state.unread.some((name) => uriFor(name).toString() === uri.toString())) return
+        return { badge: 'U', tooltip: 'Untracked', color: new vscode.ThemeColor('gitDecoration.untrackedResourceForeground') }
+      },
+    }),
   )
 
   // ---- which lines are messages: bars like git's changed-line markers ------------------------------
@@ -216,10 +243,10 @@ function activate(context) {
 
   function decorate(editor) {
     const doc = docs.get(editor.document.uri.toString())
-    if (!doc) return
+    if (!doc?.shownLines) return
     for (const kind of ['recv', 'send']) {
       const marked = (l) => l.kind === kind || (kind === 'send' && l.kind === 'draft')
-      editor.setDecorations(bars[kind], doc.lines.flatMap((l, i) => (marked(l) ? [new vscode.Range(i, 0, i, 0)] : [])))
+      editor.setDecorations(bars[kind], doc.shownLines.flatMap((l, i) => (marked(l) ? [new vscode.Range(i, 0, i, 0)] : [])))
     }
   }
   const editorsOf = (document) => vscode.window.visibleTextEditors.filter((e) => e.document === document)

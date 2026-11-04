@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:">
-<title>Visual Stagram Code</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src https: data: blob:">
+<title>Visual Studio Code</title>
 <link rel="stylesheet" href="node_modules/@vscode/codicons/dist/codicon.css">
 <style>
 /* VS Code "Dark Modern" */
@@ -12,13 +12,22 @@
   --chrome: #181818;
   --border: #2b2b2b;
   --fg: #cccccc;
+  --muted: #9d9d9d;
   --accent: #0078d4;
+  --hover: #2a2d2e;
+  --select: #04395e;
+  --input: #313131;
+  --input-border: #3c3c3c;
+  --widget: #202020;
+  --widget-border: #454545;
+  --mono: Menlo, Monaco, 'Courier New', monospace;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
   display: grid;
   grid-template-rows: 35px 1fr 22px;
+  grid-template-columns: minmax(0, 1fr); /* never wider than the window, however many tabs are open */
   background: var(--chrome);
   color: var(--fg);
   font: 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -28,7 +37,10 @@ body {
 }
 button { all: unset; }
 button:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+[hidden] { display: none !important; }
+input, textarea { font: inherit; color: inherit; }
 
+/* ---- title bar ------------------------------------------------------------------------------------- */
 .titlebar {
   position: relative;
   display: flex;
@@ -38,8 +50,8 @@ button:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
 }
-.titlebar button, .command-center { -webkit-app-region: no-drag; }
-.icon { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 5px; }
+.titlebar button, .menubar { -webkit-app-region: no-drag; }
+.icon { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 5px; color: var(--fg); }
 button.icon:hover { background: #ffffff1a; }
 .command-center {
   width: 38vw;
@@ -55,6 +67,7 @@ button.icon:hover { background: #ffffff1a; }
   border-radius: 6px;
   font-size: 12px;
 }
+.command-center:hover { background: #ffffff1a; }
 .command-center .codicon { font-size: 14px; }
 /* keeps clear of the Windows/Linux window buttons; on macOS the env() fallbacks make this 8px */
 .layout-controls {
@@ -66,20 +79,21 @@ button.icon:hover { background: #ffffff1a; }
 /* Windows/Linux (body.win): VS Code keeps its menu in the title bar and uses Consolas 14px */
 .menubar { display: none; flex: none; align-items: center; }
 .menubar img { margin: 0 6px 0 2px; }
-.menubar span { padding: 4px 8px; }
+.menubar button { padding: 3px 8px; border-radius: 4px; }
+.menubar button:hover, .menubar button.open { background: #ffffff1a; }
 .win .menubar { display: flex; }
-/* menu on the left, search box centred in what's left, room reserved for the buttons on the right */
 .win .titlebar {
   justify-content: flex-start;
   padding: 0 calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 110px) 0 8px;
 }
 .win #back { margin-left: auto; }
 .win .command-center { flex: 0 1 38vw; width: auto; min-width: 0; margin-right: auto; overflow: hidden; white-space: nowrap; }
-.win .code { font: 14px/19px Consolas, 'Courier New', monospace; }
+.win .code, .win .text-editor { font: 14px/19px Consolas, 'Courier New', monospace; }
 .win .line { min-height: 19px; }
 
 main { display: flex; min-height: 0; }
 
+/* ---- activity bar ---------------------------------------------------------------------------------- */
 .activitybar {
   width: 48px;
   flex: none;
@@ -88,7 +102,7 @@ main { display: flex; min-height: 0; }
   justify-content: space-between;
   border-right: 1px solid var(--border);
 }
-.activitybar > div > * {
+.activitybar button {
   position: relative;
   width: 48px;
   height: 48px;
@@ -96,7 +110,7 @@ main { display: flex; min-height: 0; }
   place-items: center;
   color: #868686;
 }
-.activitybar > div > :hover, .activitybar .active { color: #d7d7d7; }
+.activitybar button:hover, .activitybar .active { color: #d7d7d7; }
 .activitybar .active::before {
   content: '';
   position: absolute;
@@ -105,17 +119,35 @@ main { display: flex; min-height: 0; }
   background: var(--accent);
 }
 .activitybar .codicon { font-size: 24px; }
+.badge {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
 
+/* ---- side bar -------------------------------------------------------------------------------------- */
 .sidebar {
   width: 300px;
   flex: none;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border);
+  min-height: 0;
 }
-.sidebar[hidden] { display: none; }
-.sidebar h2 {
+.view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.view h2 {
   height: 35px;
+  flex: none;
   margin: 0;
   padding: 0 8px 0 20px;
   display: flex;
@@ -124,6 +156,7 @@ main { display: flex; min-height: 0; }
   font-size: 11px;
   font-weight: 400;
 }
+.actions { display: flex; gap: 2px; }
 .pane-header {
   height: 22px;
   flex: none;
@@ -134,63 +167,133 @@ main { display: flex; min-height: 0; }
   font-size: 11px;
   font-weight: 700;
 }
+.pane-header .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-header .actions { visibility: hidden; padding-right: 8px; }
+.view:hover .pane-header .actions { visibility: visible; }
 .pane-header.collapsed { border-top: 1px solid var(--border); }
-.tree { flex: 1; min-height: 0; overflow-y: auto; }
-.tree .folder, .tree button { height: 22px; display: flex; align-items: center; gap: 6px; }
-.tree .folder { padding-left: 8px; gap: 2px; }
-.tree button { box-sizing: border-box; width: 100%; padding: 0 8px 0 32px; }
-.tree button:hover { background: #2a2d2e; }
-.tree button.active { background: #37373d; color: #fff; }
-.tree #readme { padding-left: 24px; }
-.tree button :last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.codicon-python, .codicon-markdown { flex: none; color: #519aba; }
+.pane-header .count { margin-left: 6px; padding: 0 6px; border-radius: 9px; background: #616161; color: #fff; font-size: 10px; font-weight: 400; }
 
+.tree { flex: 1; min-height: 0; overflow-y: auto; outline: none; }
+.row {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px 0 calc(var(--depth, 0) * 8px + 8px);
+  white-space: nowrap;
+}
+.row:hover { background: var(--hover); }
+.row.selected { background: #37373d; }
+.tree:focus .row.selected { background: var(--select); outline: 1px solid var(--accent); outline-offset: -1px; }
+.row.drop { background: #383b3d; outline: 1px dashed #868686; outline-offset: -1px; }
+.twistie { width: 16px; flex: none; display: grid; place-items: center; font-size: 16px; }
+.row .label { flex: 1; overflow: hidden; text-overflow: ellipsis; margin-left: 2px; }
+.row .description { margin-left: 6px; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.row input {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  margin-left: 2px;
+  padding: 0 4px;
+  background: var(--input);
+  border: 1px solid var(--accent);
+  outline: none;
+}
+.row input.bad { border-color: #be1100; }
+.deco { flex: none; margin-left: 6px; font-size: 12px; }
+.untracked > .label, .untracked > .deco { color: #73c991; }
+.modified > .label, .modified > .deco { color: #e2c08d; }
+.file-icon { width: 16px; height: 16px; flex: none; display: grid; place-items: center; font-size: 14px; }
+.file-icon.text { font: 700 8px/16px -apple-system, 'Segoe UI', sans-serif; letter-spacing: -0.3px; }
+
+.search-box { padding: 0 12px 0 20px; display: flex; flex-direction: column; gap: 6px; }
+.field { position: relative; display: flex; align-items: center; background: var(--input); border: 1px solid var(--input-border); border-radius: 2px; }
+.field:focus-within { border-color: var(--accent); }
+.field input { flex: 1; min-width: 0; height: 24px; padding: 0 6px; background: none; border: 0; outline: none; }
+.field .toggle { width: 20px; height: 20px; margin-right: 2px; display: grid; place-items: center; border-radius: 3px; color: var(--fg); }
+.field .toggle.on { background: #24527380; outline: 1px solid var(--accent); }
+.summary { padding: 8px 12px 4px 20px; color: var(--muted); font-size: 12px; }
+.hit { font-family: var(--mono); font-size: 12px; }
+.hit .label { white-space: pre; }
+.hit mark { background: #9e6a03aa; color: inherit; }
+
+.scm-input { padding: 0 12px 8px 20px; display: flex; flex-direction: column; gap: 8px; }
+.scm-input textarea { height: 26px; resize: none; padding: 4px 6px; background: var(--input); border: 1px solid var(--input-border); border-radius: 2px; outline: none; }
+.scm-input textarea:focus { border-color: var(--accent); }
+.button { display: flex; align-items: center; justify-content: center; gap: 4px; height: 26px; border-radius: 2px; background: var(--accent); color: #fff; }
+.button:hover { background: #026ec1; }
+.button.secondary { background: #313131; }
+.welcome { padding: 8px 20px; display: flex; flex-direction: column; gap: 12px; line-height: 1.5; }
+.welcome a { color: #4daafc; }
+.ext { display: flex; gap: 10px; padding: 6px 12px 6px 20px; }
+.ext:hover { background: var(--hover); }
+.ext .logo { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 4px; font-weight: 700; font-size: 15px; color: #fff; }
+.ext .meta { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ext .meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ext .name { font-weight: 600; }
+.ext .desc, .ext .pub { color: var(--muted); font-size: 12px; }
+
+/* ---- editor ---------------------------------------------------------------------------------------- */
 .editor { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg); }
 .tabs { height: 35px; flex: none; display: flex; background: var(--chrome); border-bottom: 1px solid var(--border); }
+.tab-list { flex: 1; min-width: 0; display: flex; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .tab {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
   margin-bottom: -1px;
-  padding: 0 10px;
-  background: var(--bg);
-  border-top: 1px solid var(--accent);
+  padding: 0 4px 0 10px;
   border-right: 1px solid var(--border);
-  color: #fff;
+  border-top: 1px solid transparent;
+  color: var(--muted);
 }
-.tab-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; padding-right: 8px; }
-.breadcrumbs { height: 22px; flex: none; display: flex; align-items: center; gap: 2px; padding-left: 16px; color: #a9a9a9; }
+.tab.active { background: var(--bg); border-top-color: var(--accent); color: #fff; }
+.tab .close { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 4px; visibility: hidden; }
+.tab.active .close, .tab:hover .close { visibility: visible; }
+.tab .close:hover { background: #ffffff1f; }
+.tab.untracked .name { color: #73c991; }
+.tab-actions { flex: none; margin-left: auto; display: flex; align-items: center; gap: 4px; padding: 0 8px; }
+.breadcrumbs { height: 22px; flex: none; display: flex; align-items: center; gap: 2px; padding-left: 16px; color: #a9a9a9; white-space: nowrap; overflow: hidden; }
+.breadcrumbs .file-icon { margin-right: 2px; }
 
-.stage { position: relative; flex: 1; min-height: 0; overflow: hidden; }
-/* Hidden under the code view. A fixed, tall desktop-size viewport keeps Instagram
-   on its full layout and makes it render more threads and messages to read. */
+/* clip, not hidden: nothing may scroll it (scrollIntoView would, to reach into the tall hidden page) */
+.stage { position: relative; flex: 1; min-height: 0; overflow: clip; }
+/* Hidden under the code view. A fixed, tall desktop-size viewport keeps the site on its full
+   layout and makes it render more threads and messages to read. */
 webview { position: absolute; top: 0; left: 0; width: 1400px; height: 2400px; }
-.raw webview { width: 100%; height: 100%; z-index: 2; }
-.code {
+.raw webview.shown { width: 100%; height: 100%; z-index: 4; }
+.code, .text-editor {
   position: absolute;
   inset: 0;
   z-index: 1;
   overflow: auto;
   background: var(--bg);
-  font: 12px/18px Menlo, Monaco, 'Courier New', monospace;
+  font: 12px/18px var(--mono);
   user-select: text;
   cursor: text;
-  counter-reset: ln;
+  tab-size: 4;
 }
+.code { counter-reset: ln; outline: none; }
 .line { min-height: 18px; padding-right: 24px; white-space: pre; counter-increment: ln; }
+.wrap .line { white-space: pre-wrap; overflow-wrap: anywhere; padding-left: 64px; text-indent: -64px; }
 .line::before {
   content: counter(ln);
   display: inline-block;
   width: 38px;
   margin-right: 26px;
   text-align: right;
+  text-indent: 0;
   color: #6e7681;
   user-select: none;
 }
 .line.input { box-shadow: inset 0 0 0 1px #282828; }
 .line.input::before { color: var(--fg); }
-#draft { all: unset; field-sizing: content; min-width: 1px; caret-color: #aeafad; }
+#draft { outline: none; caret-color: #aeafad; padding-right: 1px; }
 .line.input.empty .q { display: none; } /* nothing typed yet: input(), not input("") */
+.line.flash { background-color: #ffffff12; }
+.caret { display: inline-block; width: 2px; height: 1.1em; margin-right: -2px; vertical-align: text-bottom; background: #aeafad; animation: blink 1s steps(1) infinite; }
+.code:not(:focus) .caret { animation: none; opacity: 0.5; }
+@keyframes blink { 50% { opacity: 0; } }
 /* Hover card for pictures: anchored to the hovered call, flips below when there's no room above. */
 .media:hover { anchor-name: --media; }
 .media img {
@@ -207,7 +310,9 @@ webview { position: absolute; top: 0; left: 0; width: 1400px; height: 2400px; }
   border: 1px solid #454545;
   border-radius: 3px;
 }
-.media:hover img { display: block; }
+.media:hover img[src] { display: block; }
+.mention { cursor: pointer; }
+.mention:hover { text-decoration: underline; }
 .h { color: #569cd6; font-weight: bold; }
 /* messages among the filler, marked like git's changed-line bars: blue = received, green = mine */
 .line.recv { background: linear-gradient(#0078d4, #0078d4) 50px 0 / 3px 100% no-repeat; }
@@ -218,77 +323,262 @@ webview { position: absolute; top: 0; left: 0; width: 1400px; height: 2400px; }
 .fn { color: #dcdcaa; }
 .str { color: #ce9178; }
 .com { color: #6a9955; }
+.type { color: #4ec9b0; }
+.key { color: #9cdcfe; }
+.lv-info { color: #4ec9b0; }
+.lv-debug { color: #808080; }
+.lv-warn { color: #dcdcaa; }
+.lv-error { color: #f14c4c; }
+
+/* a real editor for the user's own files: a textarea over its coloured copy */
+.text-editor { display: flex; align-items: flex-start; }
+.te-gutter { position: sticky; left: 0; z-index: 1; flex: none; width: 64px; padding-right: 26px; text-align: right; white-space: pre; color: #6e7681; background: var(--bg); user-select: none; }
+.te-body { position: relative; flex: 1; min-width: max-content; }
+.te-hl, .te-input { margin: 0; padding: 0 24px 0 0; font: inherit; white-space: pre; tab-size: inherit; }
+.te-hl { min-height: 100%; pointer-events: none; }
+.te-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  resize: none;
+  overflow: hidden;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: transparent;
+  caret-color: #aeafad;
+}
+.te-input::selection { background: #264f7899; } /* see-through: the coloured text is underneath */
+.te-current { position: absolute; left: 0; right: 0; height: 18px; box-shadow: inset 0 0 0 1px #282828; pointer-events: none; }
+.win .te-current { height: 19px; }
+
+.watermark { position: absolute; inset: 0; z-index: 1; display: grid; place-content: center; gap: 28px; background: var(--bg); color: #ffffff4d; }
+.watermark img { width: 180px; margin: 0 auto; opacity: 0.1; filter: grayscale(1); }
+.watermark dl { display: grid; grid-template-columns: auto auto; gap: 10px 12px; margin: 0; }
+.watermark dt { text-align: right; }
+.watermark dd { margin: 0; display: flex; gap: 3px; }
+kbd { padding: 0 5px; border: 1px solid #ffffff33; border-bottom-color: #ffffff22; border-radius: 3px; background: #ffffff0a; font: 11px/17px inherit; color: #ffffff80; }
+
 ::-webkit-scrollbar { width: 14px; height: 14px; }
 ::-webkit-scrollbar-thumb { background: rgba(121, 121, 121, 0.4); }
 ::-webkit-scrollbar-corner { background: transparent; }
 
-.statusbar { display: flex; justify-content: space-between; border-top: 1px solid var(--border); font-size: 12px; white-space: nowrap; }
+/* ---- panel ----------------------------------------------------------------------------------------- */
+.panel { height: 38%; min-height: 120px; flex: none; display: flex; flex-direction: column; background: var(--chrome); border-top: 1px solid var(--border); }
+.panel-tabs { height: 35px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 8px; }
+.panel-tabs > button { padding: 4px 6px; font-size: 11px; color: var(--muted); border-bottom: 1px solid transparent; }
+.panel-tabs > button.active { color: #e7e7e7; border-bottom-color: var(--accent); }
+.panel-tabs > button:hover { color: #e7e7e7; }
+.panel-tabs .actions { margin-left: auto; }
+.panel-body { flex: 1; min-height: 0; position: relative; }
+.panel-pane { position: absolute; inset: 0; overflow: auto; padding: 0 20px; }
+.panel-pane.message { padding-top: 4px; color: var(--muted); }
+.terminal { font: 12px/16px var(--mono); user-select: text; cursor: text; padding: 4px 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.term-line { display: flex; }
+.term-line input { flex: 1; min-width: 0; padding: 0; border: 0; outline: none; background: none; font: inherit; caret-color: #aeafad; }
+
+/* ---- status bar ------------------------------------------------------------------------------------ */
+.statusbar { display: flex; justify-content: space-between; border-top: 1px solid var(--border); font-size: 12px; white-space: nowrap; overflow: hidden; }
 .statusbar > div { display: flex; }
 .statusbar span, .statusbar button { display: flex; align-items: center; gap: 4px; margin: 0 2px; padding: 0 5px; }
 .statusbar button:hover { background: #ffffff1f; }
 .statusbar .remote { margin: 0 4px 0 0; padding: 0 10px; background: var(--accent); color: #fff; }
 .statusbar .codicon { font-size: 14px; }
+
+/* ---- quick input, menus, suggestions --------------------------------------------------------------- */
+.quick {
+  position: fixed;
+  top: 38px;
+  left: 50%;
+  z-index: 10;
+  width: min(600px, 80vw);
+  transform: translateX(-50%);
+  padding: 6px 0;
+  background: #222222;
+  border: 1px solid #2b2b2b;
+  border-radius: 6px;
+  box-shadow: 0 0 8px 2px #0000005c;
+}
+.quick .field { margin: 0 6px 6px; }
+.quick-list { max-height: 440px; overflow-y: auto; }
+.quick-item { height: 22px; display: flex; align-items: center; gap: 6px; margin: 0 6px; padding: 0 6px; border-radius: 3px; white-space: nowrap; }
+.quick-item.selected { background: var(--select); outline: 1px solid var(--accent); outline-offset: -1px; color: #fff; }
+.quick-item .label { overflow: hidden; text-overflow: ellipsis; }
+.quick-item .description { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.quick-item .keys { margin-left: auto; display: flex; gap: 2px; }
+.quick-item b { color: #2aaaff; font-weight: inherit; }
+.quick-empty { padding: 2px 12px; color: var(--muted); }
+.menu {
+  position: fixed;
+  z-index: 11;
+  min-width: 220px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--widget-border);
+  border-radius: 5px;
+  box-shadow: 0 2px 8px #00000080;
+}
+.menu:focus { outline: none; }
+.menu-item { height: 24px; display: flex; align-items: center; gap: 24px; padding: 0 10px 0 20px; border-radius: 3px; }
+.menu-item.selected, .menu-item:hover { background: var(--accent); color: #fff; }
+.menu-item.disabled { opacity: 0.4; pointer-events: none; }
+.menu-item .keys { margin-left: auto; color: inherit; opacity: 0.8; font-size: 12px; }
+.menu hr { height: 1px; margin: 4px 0; border: 0; background: var(--widget-border); }
+.suggest {
+  position: fixed;
+  z-index: 9;
+  min-width: 260px;
+  max-width: 420px;
+  background: var(--widget);
+  border: 1px solid var(--widget-border);
+  font: 12px/22px var(--mono);
+  box-shadow: 0 0 8px 2px #0000005c;
+}
+.suggest-item { display: flex; align-items: center; gap: 6px; padding: 0 6px; white-space: nowrap; }
+.suggest-item.selected { background: var(--select); outline: 1px solid var(--accent); outline-offset: -1px; }
+.suggest-item .codicon { color: #75beff; }
+.suggest-item .description { margin-left: auto; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.toast {
+  position: fixed;
+  right: 12px;
+  bottom: 34px;
+  z-index: 12;
+  max-width: 420px;
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #202020;
+  border: 1px solid var(--widget-border);
+  border-radius: 4px;
+  box-shadow: 0 0 8px 2px #0000005c;
+}
+.toast .codicon-info { color: #3794ff; }
 </style>
 </head>
 <body>
 
 <header class="titlebar">
-  <div class="menubar" aria-hidden="true"><img src="vsstagram.svg" alt="" width="16" height="16"><span>File</span><span>Edit</span><span>Selection</span><span>View</span><span>Go</span><span>Run</span><span>Terminal</span><span>Help</span></div>
+  <div class="menubar"><img src="vsstagram.svg" alt="" width="16" height="16"></div>
   <button class="icon" id="back" title="Go Back" aria-label="Go Back"><i class="codicon codicon-arrow-left"></i></button>
   <button class="icon" id="forward" title="Go Forward" aria-label="Go Forward"><i class="codicon codicon-arrow-right"></i></button>
-  <div class="command-center"><i class="codicon codicon-search"></i>visual-stagram-code</div>
+  <button class="command-center" data-cmd="workbench.action.quickOpen"><i class="codicon codicon-search"></i><span id="workspace-name"></span></button>
   <div class="layout-controls">
-    <button class="icon" data-toggle-sidebar title="Toggle Primary Side Bar" aria-label="Toggle Primary Side Bar"><i class="codicon codicon-layout-sidebar-left"></i></button>
-    <i class="icon codicon codicon-layout-panel-off" aria-hidden="true"></i>
-    <i class="icon codicon codicon-layout-sidebar-right-off" aria-hidden="true"></i>
-    <i class="icon codicon codicon-layout" aria-hidden="true"></i>
+    <button class="icon" data-cmd="workbench.action.toggleSidebarVisibility" title="Toggle Primary Side Bar" aria-label="Toggle Primary Side Bar"><i class="codicon codicon-layout-sidebar-left"></i></button>
+    <button class="icon" data-cmd="workbench.action.togglePanel" title="Toggle Panel" aria-label="Toggle Panel"><i id="panel-icon" class="codicon codicon-layout-panel-off"></i></button>
+    <button class="icon" title="Toggle Secondary Side Bar" aria-label="Toggle Secondary Side Bar"><i class="codicon codicon-layout-sidebar-right-off"></i></button>
+    <button class="icon" data-cmd="workbench.action.showCommands" title="Customize Layout..." aria-label="Customize Layout"><i class="codicon codicon-layout"></i></button>
   </div>
 </header>
 
 <main>
   <nav class="activitybar">
     <div>
-      <button class="active" data-toggle-sidebar title="Explorer" aria-label="Explorer"><i class="codicon codicon-files"></i></button>
-      <i class="codicon codicon-search" aria-hidden="true"></i>
-      <i class="codicon codicon-source-control" aria-hidden="true"></i>
-      <i class="codicon codicon-debug-alt" aria-hidden="true"></i>
-      <i class="codicon codicon-extensions" aria-hidden="true"></i>
+      <button data-view="explorer" title="Explorer" aria-label="Explorer"><i class="codicon codicon-files"></i></button>
+      <button data-view="search" title="Search" aria-label="Search"><i class="codicon codicon-search"></i></button>
+      <button data-view="scm" title="Source Control" aria-label="Source Control"><i class="codicon codicon-source-control"></i><span class="badge" id="scm-badge" hidden></span></button>
+      <button data-view="debug" title="Run and Debug" aria-label="Run and Debug"><i class="codicon codicon-debug-alt"></i></button>
+      <button data-view="extensions" title="Extensions" aria-label="Extensions"><i class="codicon codicon-extensions"></i></button>
     </div>
     <div>
-      <i class="codicon codicon-account" aria-hidden="true"></i>
-      <i class="codicon codicon-settings-gear" aria-hidden="true"></i>
+      <button id="accounts" title="Accounts" aria-label="Accounts"><i class="codicon codicon-account"></i></button>
+      <button id="manage" title="Manage" aria-label="Manage"><i class="codicon codicon-settings-gear"></i></button>
     </div>
   </nav>
 
   <aside class="sidebar">
-    <h2>EXPLORER <i class="codicon codicon-ellipsis" aria-hidden="true"></i></h2>
-    <div class="pane-header"><i class="codicon codicon-chevron-down"></i>VISUAL-STAGRAM-CODE</div>
-    <div class="tree">
-      <div class="folder"><i class="codicon codicon-chevron-down"></i>direct</div>
-      <div id="threads"></div>
-      <button id="readme"><i class="codicon codicon-markdown"></i><span>README.md</span></button>
-    </div>
-    <div class="pane-header collapsed"><i class="codicon codicon-chevron-right"></i>OUTLINE</div>
-    <div class="pane-header collapsed"><i class="codicon codicon-chevron-right"></i>TIMELINE</div>
+    <section class="view" data-pane="explorer">
+      <h2>EXPLORER <i class="codicon codicon-ellipsis" aria-hidden="true"></i></h2>
+      <div class="pane-header" id="root-header"><i class="codicon codicon-chevron-down"></i><span class="label" id="root-name"></span>
+        <span class="actions">
+          <button class="icon" data-cmd="explorer.newFile" title="New File..."><i class="codicon codicon-new-file"></i></button>
+          <button class="icon" data-cmd="explorer.newFolder" title="New Folder..."><i class="codicon codicon-new-folder"></i></button>
+          <button class="icon" data-cmd="direct.loadMore" title="Refresh Explorer"><i class="codicon codicon-refresh"></i></button>
+          <button class="icon" data-cmd="explorer.collapse" title="Collapse Folders in Explorer"><i class="codicon codicon-collapse-all"></i></button>
+        </span>
+      </div>
+      <div class="tree" id="tree" tabindex="0"></div>
+      <div class="pane-header collapsed"><i class="codicon codicon-chevron-right"></i>OUTLINE</div>
+      <div class="pane-header collapsed"><i class="codicon codicon-chevron-right"></i>TIMELINE</div>
+    </section>
+    <section class="view" data-pane="search" hidden>
+      <h2>SEARCH <span class="actions"><button class="icon" data-cmd="search.clear" title="Clear Search Results"><i class="codicon codicon-clear-all"></i></button></span></h2>
+      <div class="search-box">
+        <div class="field"><input id="search-input" placeholder="Search" spellcheck="false" aria-label="Search"><button class="toggle" id="search-case" title="Match Case"><i class="codicon codicon-case-sensitive"></i></button><button class="toggle" id="search-word" title="Match Whole Word"><i class="codicon codicon-whole-word"></i></button><button class="toggle" id="search-regex" title="Use Regular Expression"><i class="codicon codicon-regex"></i></button></div>
+      </div>
+      <div class="summary" id="search-summary"></div>
+      <div class="tree" id="search-results"></div>
+    </section>
+    <section class="view" data-pane="scm" hidden>
+      <h2>SOURCE CONTROL <i class="codicon codicon-ellipsis" aria-hidden="true"></i></h2>
+      <div class="scm-input">
+        <textarea id="scm-message" placeholder="Message (⌘Enter to commit on 'main')" spellcheck="false"></textarea>
+        <button class="button" id="commit"><i class="codicon codicon-check"></i>Commit</button>
+      </div>
+      <div class="pane-header"><i class="codicon codicon-chevron-down"></i><span class="label">Changes<span class="count" id="changes-count">0</span></span></div>
+      <div class="tree" id="changes"></div>
+    </section>
+    <section class="view" data-pane="debug" hidden>
+      <h2>RUN AND DEBUG <i class="codicon codicon-ellipsis" aria-hidden="true"></i></h2>
+      <div class="welcome">
+        <button class="button" data-cmd="workbench.action.debug.start">Run and Debug</button>
+        <span>To customize Run and Debug, <a>create a launch.json file</a>.</span>
+        <button class="button secondary" data-cmd="workbench.action.terminal.new">Show all automatic debug configurations</button>
+      </div>
+    </section>
+    <section class="view" data-pane="extensions" hidden>
+      <h2>EXTENSIONS <i class="codicon codicon-ellipsis" aria-hidden="true"></i></h2>
+      <div class="search-box"><div class="field"><input placeholder="Search Extensions in Marketplace" spellcheck="false" aria-label="Search Extensions"></div></div>
+      <div class="pane-header" style="margin-top: 8px"><i class="codicon codicon-chevron-down"></i><span class="label">INSTALLED</span></div>
+      <div class="tree" id="extensions"></div>
+    </section>
   </aside>
 
-  <!-- "raw" = show the real Instagram page (login, prompts, anything the code view can't do) -->
   <section class="editor">
     <div class="tabs">
-      <div class="tab"><i id="tab-icon" class="codicon codicon-markdown" aria-hidden="true"></i><span class="tab-label">README.md</span><i class="codicon codicon-close" aria-hidden="true"></i></div>
+      <div class="tab-list" id="tab-list"></div>
       <div class="tab-actions">
-        <button class="icon" id="raw" title="Toggle Instagram Page" aria-label="Toggle Instagram Page"><i class="codicon codicon-open-preview"></i></button>
-        <i class="codicon codicon-split-horizontal" aria-hidden="true"></i>
-        <i class="codicon codicon-ellipsis" aria-hidden="true"></i>
+        <button class="icon" id="raw" title="Open Preview to the Side" aria-label="Open Preview"><i class="codicon codicon-open-preview"></i></button>
+        <button class="icon" title="Split Editor Right" aria-label="Split Editor Right"><i class="codicon codicon-split-horizontal"></i></button>
+        <button class="icon" id="tab-more" title="More Actions..." aria-label="More Actions"><i class="codicon codicon-ellipsis"></i></button>
       </div>
     </div>
-    <div class="breadcrumbs"></div>
-    <div class="stage">
-      <webview src="https://www.instagram.com/direct/inbox/" partition="persist:instagram" webpreferences="backgroundThrottling=no"></webview>
-      <div class="code">
+    <div class="breadcrumbs" id="breadcrumbs"></div>
+    <div class="stage" id="stage">
+      <webview id="ig" src="https://www.instagram.com/direct/inbox/" partition="persist:instagram" webpreferences="backgroundThrottling=no"></webview>
+      <div class="code" id="code" tabindex="-1">
         <div id="lines"></div>
-        <div class="line input send" hidden><span id="draft-pre"></span><span class="str"><span class="q">"</span><input id="draft" aria-label="Message" spellcheck="false" autocomplete="off"><span class="q">"</span></span><span id="draft-post"></span></div>
+        <div class="line input send" id="input-line" hidden><span id="draft-pre"></span><span class="str"><span class="q">"</span><span id="draft" contenteditable="plaintext-only" spellcheck="false" aria-label="Message"></span><span class="q">"</span></span><span id="draft-post"></span></div>
         <div id="after"></div>
+      </div>
+      <div class="text-editor" id="text-editor" hidden>
+        <div class="te-gutter" id="te-gutter"></div>
+        <div class="te-body"><div class="te-current" id="te-current"></div><pre class="te-hl" id="te-hl"></pre><textarea class="te-input" id="te-input" spellcheck="false" wrap="off" autocomplete="off" aria-label="Editor"></textarea></div>
+      </div>
+      <div class="watermark" id="watermark" hidden>
+        <img src="vsstagram.svg" alt="">
+        <dl id="watermark-keys"></dl>
+      </div>
+    </div>
+    <div class="panel" id="panel" hidden>
+      <div class="panel-tabs" id="panel-tabs">
+        <button data-panel="problems">PROBLEMS</button>
+        <button data-panel="output">OUTPUT</button>
+        <button data-panel="debug">DEBUG CONSOLE</button>
+        <button data-panel="terminal">TERMINAL</button>
+        <button data-panel="ports">PORTS</button>
+        <span class="actions">
+          <button class="icon" data-cmd="workbench.action.terminal.new" title="New Terminal"><i class="codicon codicon-add"></i></button>
+          <button class="icon" data-cmd="workbench.action.terminal.kill" title="Kill Terminal"><i class="codicon codicon-trash"></i></button>
+          <button class="icon" data-cmd="workbench.action.togglePanel" title="Hide Panel"><i class="codicon codicon-close"></i></button>
+        </span>
+      </div>
+      <div class="panel-body">
+        <div class="panel-pane message" data-pane="problems">No problems have been detected in the workspace.</div>
+        <div class="panel-pane message" data-pane="output">[info] Python extension activated. Locating interpreters...<br>[info] Discovered 1 interpreter in 12 ms</div>
+        <div class="panel-pane message" data-pane="debug">Please start a debug session to evaluate expressions</div>
+        <div class="panel-pane terminal" data-pane="terminal" id="terminal"><div id="term-out"></div><div class="term-line"><span id="term-prompt"></span><input id="term-input" spellcheck="false" autocomplete="off" aria-label="Terminal input"></div></div>
+        <div class="panel-pane message" data-pane="ports">No forwarded ports. Forward a port to access your running services locally.</div>
       </div>
     </div>
   </section>
@@ -299,20 +589,21 @@ webview { position: absolute; top: 0; left: 0; width: 1400px; height: 2400px; }
     <span class="remote"><i class="codicon codicon-remote"></i></span>
     <span><i class="codicon codicon-git-branch"></i>main</span>
     <span><i class="codicon codicon-sync"></i></span>
-    <span><i class="codicon codicon-error"></i>0 <i class="codicon codicon-warning"></i>0</span>
+    <button data-cmd="workbench.actions.view.problems"><i class="codicon codicon-error"></i><span id="errors">0</span><i class="codicon codicon-warning"></i>0</button>
   </div>
   <div>
-    <span>Ln 1, Col 1</span>
-    <button id="spaces" title="Camouflage">Spaces: 2</button>
+    <span id="cursor">Ln 1, Col 1</span>
+    <button id="spaces" title="Select Indentation">Spaces: 2</button>
     <span>UTF-8</span>
     <span>LF</span>
-    <span id="lang">{} Python</span>
-    <span>3.13.5</span>
+    <button id="lang" title="Select Language Mode" data-cmd="workbench.action.editor.changeLanguageMode">{} Python</button>
+    <span id="python">3.13.5</span>
     <span><i class="codicon codicon-bell"></i></span>
   </div>
 </footer>
 
 <script src="scrape.js"></script>
+<script src="telegram.js"></script>
 <script src="camo.js"></script>
 <script src="renderer.js"></script>
 </body>

@@ -22,10 +22,12 @@
     "appId": "com.visualstagramcode.app",
     "files": [
       "main.js",
+      "preload.js",
       "allow.js",
       "index.html",
       "renderer.js",
       "scrape.js",
+      "telegram.js",
       "README.md",
       "vsstagram.svg",
       "bridge.js",
