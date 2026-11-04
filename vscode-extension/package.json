@@ -2,7 +2,7 @@
   "name": "vstagram",
   "displayName": "Visual Stagram Code DM",
   "description": "인스타그램 DM을 코드처럼 보여줍니다 (파이썬, 자바스크립트, 코틀린 등 원하는 확장자로). Visual Stagram Code 데스크톱 앱이 필요합니다.",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "publisher": "hongs-lab",
   "license": "UNLICENSED",
   "repository": {
